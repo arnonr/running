@@ -186,6 +186,9 @@ export class UI {
             <div class="ls-sub" id="ls-desc">
               ปัดซ้าย/ขวา/ขึ้น/ลง ที่ตัวละครเพื่อวอร์มอัพรอรอบใหม่เริ่มพร้อมกันบนจอทีวี!
             </div>
+            <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">
+              ${CENTER_LIST.map((c) => `<span style="font-size:11px;padding:2px 6px;border-radius:6px;background:rgba(15,23,42,.8);border:1px solid ${c.color}66" title="${c.nameTh} (${c.exhibitionFloorTh})">${c.icon} #${c.id} ${c.shortTh}</span>`).join('')}
+            </div>
           </div>
 
           <button class="big gold-btn" id="btn-join-sync">🏁 เข้าร่วมรอบถัดไปพร้อมจอทีวี</button>
@@ -263,8 +266,9 @@ export class UI {
                 <button class="tv-btn primary" id="tv-btn-start">🚀 เริ่มรอบใหม่ทันที (Start Now)</button>
                 <button class="tv-btn" id="tv-btn-hold">⏸️ ชะลอเวลา (Hold)</button>
                 <button class="tv-btn" id="tv-btn-bots">🤖 เพิ่มบอทร่วมวิ่ง</button>
-                <button class="tv-btn" id="tv-btn-dur180">⏱️ รอบละ 3 นาที</button>
-                <button class="tv-btn" id="tv-btn-dur120">⏱️ รอบละ 2 นาที</button>
+                <button class="tv-btn" id="tv-btn-dur180">⏱️ 3 นาที (180s)</button>
+                <button class="tv-btn" id="tv-btn-dur120">⏱️ 2 นาที (120s)</button>
+                <button class="tv-btn" id="tv-btn-dur90" style="grid-column:span 2">⏱️ โหมดเร่งด่วน 1.5 นาที (90s)</button>
               </div>
             </div>
           </div>
@@ -278,6 +282,11 @@ export class UI {
             <div class="tv-board-card">
               <h3><span>⏳ คิวผู้เล่นรอรอบถัดไป</span><small id="tv-wait-count">0 คน</small></h3>
               <div id="tv-wait-list" style="font-size:12px;color:#cbd5e1">ยังไม่มีผู้เล่นในคิวรอ</div>
+            </div>
+
+            <div class="tv-board-card">
+              <h3><span>🌟 สถิติสูงสุดประจำวัน (Hall of Fame)</span></h3>
+              <div id="tv-best-list" style="font-size:12px;color:#facc15"></div>
             </div>
           </div>
         </div>
@@ -339,6 +348,7 @@ export class UI {
     tap('tv-btn-bots', () => this.handlers.hostCommand({ action: 'add_bots', count: 4 }));
     tap('tv-btn-dur180', () => this.handlers.hostCommand({ action: 'set_duration', duration: 180 }));
     tap('tv-btn-dur120', () => this.handlers.hostCommand({ action: 'set_duration', duration: 120 }));
+    tap('tv-btn-dur90', () => this.handlers.hostCommand({ action: 'set_duration', duration: 90 }));
 
     for (const b of this.root.querySelectorAll('button, input')) {
       b.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -459,6 +469,12 @@ export class UI {
         snap.waitingQueue.length > 0
           ? snap.waitingQueue.map((p) => `${p.name} (${ROLE_LABELS[p.role]})`).join(' · ')
           : 'ยังไม่มีผู้เล่นในคิวรอ (สแกน QR เข้าร่วมได้ตลอดเวลา)';
+    }
+    if (this.el['tv-best-list']) {
+      this.el['tv-best-list'].textContent =
+        snap.allDayBest.length > 0
+          ? snap.allDayBest.slice(0, 3).map((b, idx) => `#${idx + 1} ${b.name}: ${b.score.toLocaleString()}`).join(' · ')
+          : '-';
     }
   }
 

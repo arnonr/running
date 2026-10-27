@@ -395,6 +395,7 @@ export class World {
     this.syncHouses(pd, zOf);
     this.syncGhostPack(dt, menu, ghosts, localPlayerId, tvMode);
 
+    this.player.root.visible = !tvMode || menu;
     if (menu) this.player.menu(dt);
     this.updateCamera(sim, dt, menu, tvMode);
     const speedFactor = menu || !sim.alive ? 0 : Math.max(0, Math.min(1, (sim.speed - 14) / 12));
@@ -535,11 +536,15 @@ export class World {
       p.end();
     }
     this.fx.warm(this.camera);
+    for (let id = 1 as CenterId; id <= 9; id = (id + 1) as CenterId) {
+      if (this.player.attachments[id]) this.player.attachments[id].visible = true;
+    }
     for (const a of Object.values(this.player.actions)) a.play();
     renderer.compile(this.scene, this.camera);
     renderer.render(this.scene, this.camera);
     for (const a of Object.values(this.player.actions)) a.stop();
     this.player.current = null;
+    this.player.setCenterEffect(null, 0);
     for (const p of all) { p.begin(); p.end(); }
     this.fx.clear();
   }

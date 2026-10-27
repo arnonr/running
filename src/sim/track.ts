@@ -1,6 +1,6 @@
 import {
   LANE_COUNT, OB, PLAYER, levelAt, speedAt, trainLength, CAR_LEN, CAR_GAP, MOVER,
-  CENTER_LIST, distanceAtTime,
+  CENTER_LIST, distanceAtTime, DEFAULT_MATCH_DURATION,
 } from '../config';
 import type { ObKind, CenterId, Hint } from './types';
 import { Rng } from './rng';
@@ -209,13 +209,15 @@ export class Track {
     this.buildSchedule();
   }
 
-  private buildSchedule() {
+  private buildSchedule(matchDuration = DEFAULT_MATCH_DURATION) {
     const items: ScheduledPickup[] = [];
+    const timeScale = Math.max(0.4, matchDuration / DEFAULT_MATCH_DURATION);
     for (const c of CENTER_LIST) {
       for (const sec of c.spawnTimes) {
+        const scaledSec = sec * timeScale;
         items.push({
           centerId: c.id,
-          targetDist: Math.max(55, distanceAtTime(sec)),
+          targetDist: Math.max(48, distanceAtTime(scaledSec, matchDuration) * 0.86),
           spawned: false,
         });
       }
@@ -224,7 +226,7 @@ export class Track {
     this.schedule = items;
   }
 
-  reset(seed: number, tutorial: boolean) {
+  reset(seed: number, tutorial: boolean, matchDuration = DEFAULT_MATCH_DURATION) {
     this.rng = new Rng(seed);
     this.frontier = 0;
     this.reach = [0, 1, 2];
@@ -232,7 +234,7 @@ export class Track {
     this.chunks = 0;
     this.failures = 0;
     this.spawnedCenters = [];
-    this.buildSchedule();
+    this.buildSchedule(matchDuration);
     this.layCoins(this.frontier + 14, 26, null, 1);
     this.frontier = 40;
     if (tutorial) this.tutorialChunk();
@@ -461,7 +463,7 @@ export class Track {
 
       // Pass 1: try along the solver's verified path on the ground
       for (let d = searchStart; d <= end - 5; d += 2.5) {
-        if (usedDist.some((u) => Math.abs(u - d) < 12)) continue;
+        if (usedDist.some((u) => Math.abs(u - d) < 6)) continue;
         const i = Math.min(path.length - 1, Math.max(0, Math.round((d - start) / STEP)));
         const pt = path[i];
         if (!pt.top && this.isTrainClear(pt.lane, d, specs)) {
@@ -477,7 +479,7 @@ export class Track {
       // Pass 2: fallback to any lane in this chunk that is clear of trains/barriers
       if (!placed) {
         for (let d = start + 6; d <= end - 5 && !placed; d += 2.5) {
-          if (usedDist.some((u) => Math.abs(u - d) < 10)) continue;
+          if (usedDist.some((u) => Math.abs(u - d) < 5)) continue;
           for (const lane of [1, 0, 2]) {
             if (this.isTrainClear(lane, d, specs)) {
               this.sink.centerPickup(item.centerId, lane, d, 1.15);

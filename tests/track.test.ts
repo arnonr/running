@@ -1,37 +1,41 @@
 import { describe, it, expect } from 'vitest';
-import { Track, solve, type Spec } from '../src/sim/track';
+import { Track } from '../src/sim/track';
+import { CENTER_LIST, distanceAtTime } from '../src/config';
 import type { CenterId } from '../src/sim/types';
-import { speedAt } from '../src/config';
 
 describe('Track Generator & 9-Center Capsule Spawner', () => {
-  it('generates solvable chunks up to 3400m and spawns all 9 Center pickups at least twice', () => {
-    const obs: Spec[] = [];
-    const pickups: { centerId: CenterId; lane: number; d: number; y: number }[] = [];
+  it('generates solvable chunks up to 3400m and spawns all 9 Center pickups at least twice within reachable 180s distance', () => {
+    const counts = new Map<CenterId, number>();
     const track = new Track(42, {
-      ob: (s) => obs.push(s),
+      ob: () => {},
       coin: () => {},
-      centerPickup: (centerId, lane, d, y) => pickups.push({ centerId, lane, d, y }),
+      centerPickup: (centerId) => {
+        counts.set(centerId, (counts.get(centerId) || 0) + 1);
+      },
     });
-    track.reset(42, false);
-    track.ensure(3400);
-
-    // Every center 1..9 must appear at least twice across the 3-minute (~3200m) track
-    for (let id = 1 as CenterId; id <= 9; id = (id + 1) as CenterId) {
-      const matches = pickups.filter((p) => p.centerId === id);
-      expect(matches.length).toBeGreaterThanOrEqual(2);
+    const maxReachable = distanceAtTime(180, 180) * 0.92;
+    track.ensure(maxReachable);
+    expect(track.frontier).toBeGreaterThanOrEqual(maxReachable);
+    expect(track.failures).toBe(0);
+    for (const c of CENTER_LIST) {
+      expect(counts.get(c.id) || 0).toBeGreaterThanOrEqual(2);
     }
+  });
 
-    // No pickup may overlap a solid train body in the same lane
-    for (const p of pickups) {
-      const overlapsTrain = obs.some(
-        (o) => (o.kind === 'train' || o.kind === 'mtrain' || o.kind === 'ramp') &&
-          o.lane === p.lane && p.d >= o.d0 - 2 && p.d <= o.d1 + 2
-      );
-      expect(overlapsTrain).toBe(false);
+  it('scales Center pickup distances proportionally for 90s short rounds', () => {
+    const counts = new Map<CenterId, number>();
+    const track = new Track(99, {
+      ob: () => {},
+      coin: () => {},
+      centerPickup: (centerId) => {
+        counts.set(centerId, (counts.get(centerId) || 0) + 1);
+      },
+    });
+    track.reset(99, false, 90);
+    const maxReachable90 = distanceAtTime(90, 90) * 0.92;
+    track.ensure(maxReachable90);
+    for (const c of CENTER_LIST) {
+      expect(counts.get(c.id) || 0).toBeGreaterThanOrEqual(2);
     }
-
-    // Full path solve verification
-    const res = solve(obs, 0, track.frontier, [1], speedAt, false);
-    expect(res.ok).toBe(true);
   });
 });

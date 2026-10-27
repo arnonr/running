@@ -57,6 +57,8 @@ wss.on('connection', (ws) => {
     const pid = clientPlayerIds.get(ws);
     if (pid) {
       clientPlayerIds.delete(ws);
+      room.leave(pid);
+      broadcastSnapshot();
     }
   });
 });

@@ -2,18 +2,21 @@ import { describe, it, expect } from 'vitest';
 import { Sim } from '../src/sim/sim';
 
 describe('Sim: Forgiving No-Death Rules, 180s Timer & 9 Center Power-Ups', () => {
-  it('never kills the runner on front collision, clamps score >= 0, and applies -50 penalty + invulnerability', () => {
+  it('never kills the runner on front collision, clamps score >= 0, resets coinStreak, and applies 0.65x slow + invulnerability', () => {
     const sim = new Sim(1);
     sim.noSpawn = true;
     sim.reset(1, false, 180);
     sim.start();
     sim.score = 20; // Review Focus #1: score < 50 before collision
+    sim.coinStreak = 5;
+    sim.coinStreakT = 0.5;
     const d0 = sim.d + 3;
     sim.addOb({ kind: 'train', lane: 1, d0, d1: d0 + 10, cars: 1 });
     sim.update(0.5);
     expect(sim.alive).toBe(true);
     expect(sim.score).toBeGreaterThanOrEqual(0);
     expect(sim.hitCount).toBe(1);
+    expect(sim.coinStreak).toBe(0);
     expect(sim.invulnerableT).toBeGreaterThan(0);
   });
 
@@ -39,7 +42,7 @@ describe('Sim: Forgiving No-Death Rules, 180s Timer & 9 Center Power-Ups', () =>
     expect(sim.alive).toBe(true);
   });
 
-  it('overwrites active power-up cleanly when picking up a new Center capsule (Review Focus #3)', () => {
+  it('overwrites active power-up cleanly when picking up a ground capsule while flying in Center #1 and grants grace invulnerability (Review Focus #3)', () => {
     const sim = new Sim(1);
     sim.noSpawn = true;
     sim.reset(1, false, 180);
@@ -47,10 +50,14 @@ describe('Sim: Forgiving No-Death Rules, 180s Timer & 9 Center Power-Ups', () =>
     sim.activateCenter(1);
     sim.update(1.0);
     expect(sim.activeCenter).toBe(1);
-    sim.addCenterPickup(5, 1, sim.d + 0.2, sim.y);
+    expect(sim.y).toBeGreaterThan(3.5);
+
+    // Ground capsule at y = 1.15 while player is flying at y = 4.2
+    sim.addCenterPickup(5, 1, sim.d + 0.2, 1.15);
     sim.update(0.1);
     expect(sim.activeCenter).toBe(5);
     expect(sim.centerTimer).toBeGreaterThan(4.8);
+    expect(sim.invulnerableT).toBeGreaterThanOrEqual(0.9);
     expect(sim.collectedCenters.has(1)).toBe(true);
     expect(sim.collectedCenters.has(5)).toBe(true);
   });
@@ -61,6 +68,14 @@ describe('Sim: Forgiving No-Death Rules, 180s Timer & 9 Center Power-Ups', () =>
     sim.reset(1, false, 180);
     sim.start();
 
+    // #2 Robo-Wingman Drones laser-destroys barriers within 28m for +50 pts
+    sim.activateCenter(2);
+    sim.addOb({ kind: 'low', lane: 1, d0: sim.d + 12, d1: sim.d + 12.7 });
+    const before2 = sim.score;
+    sim.update(0.1);
+    expect(sim.obs.length).toBe(0);
+    expect(sim.score).toBeGreaterThanOrEqual(before2 + 50);
+
     // #3 EV Train Armor smashes obstacle for +100 bonus without hit penalty
     sim.activateCenter(3);
     const s0 = sim.score;
@@ -69,9 +84,12 @@ describe('Sim: Forgiving No-Death Rules, 180s Timer & 9 Center Power-Ups', () =>
     expect(sim.hitCount).toBe(0);
     expect(sim.score).toBeGreaterThan(s0 + 90);
 
-    // #4 Green Energy Shield blocks 2 hits
+    // #4 Green Energy Shield blocks 2 hits and resets shieldHits on expiry
     sim.activateCenter(4);
     expect(sim.shieldHits).toBe(2);
+    sim.centerTimer = 0.05;
+    sim.update(0.1);
+    expect(sim.shieldHits).toBe(0);
 
     // #6 Radar Path Scanner converts barriers ahead into coins
     sim.clearWorld();
@@ -87,6 +105,14 @@ describe('Sim: Forgiving No-Death Rules, 180s Timer & 9 Center Power-Ups', () =>
     sim.activateCenter(8);
     expect(sim.stumbleSlow).toBe(0);
     expect(sim.score).toBeGreaterThanOrEqual(before8 + 500);
+
+    // #9 Space Rocket Fever is immune to obstacle hits
+    sim.clearWorld();
+    sim.activateCenter(9);
+    const hitsBefore9 = sim.hitCount;
+    sim.addOb({ kind: 'train', lane: 1, d0: sim.d + 2, d1: sim.d + 10, cars: 1 });
+    sim.update(0.35);
+    expect(sim.hitCount).toBe(hitsBefore9);
 
     // Step to end of 180s match -> floor reaches 10 and finished = true
     sim.time = 179.9;

@@ -8,9 +8,9 @@ import { Audio } from './audio';
 import { bindInput, type Action } from './input';
 import { UI, type Screen } from './ui';
 import { load, save } from './storage';
-import { SPEED, CENTERS, DEFAULT_MATCH_DURATION } from './config';
+import { SPEED, DEFAULT_MATCH_DURATION, VIEW_AHEAD, speedAtProgress } from './config';
 import { NetClient, AVATAR_COLORS, type PlayerProfile, type RoomSnapshot } from './net';
-import type { SimEvent } from './sim/types';
+import type { SimEvent, CenterId } from './sim/types';
 
 const params = new URLSearchParams(location.search);
 const TEST = params.has('test');
@@ -143,6 +143,7 @@ async function main() {
       },
       toggleTvMode: () => {
         isTvMode = !isTvMode;
+        net.setTvMode(isTvMode);
         ui.setTvMode(isTvMode);
         if (isTvMode && latestRoom.phase === 'RUNNING' && state !== 'play') {
           startMatchRun(latestRoom.matchSeed, latestRoom.matchDuration);
@@ -197,7 +198,7 @@ async function main() {
       joinedMatchId = snap.matchId;
       audio.countdownBeep(true);
       startMatchRun(snap.matchSeed, snap.matchDuration);
-    } else if (snap.phase === 'LOBBY' && prevPhase === 'PODIUM') {
+    } else if (snap.phase === 'LOBBY' && prevPhase === 'PODIUM' && isTvMode) {
       toLobby();
     }
 
@@ -220,7 +221,12 @@ async function main() {
       return;
     }
     if (state === 'pause') {
-      if (a === 'pause' || a === 'confirm') ui.show('play');
+      if (a === 'pause' || a === 'confirm') {
+        audio.unlock();
+        state = 'play';
+        audio.startMusic();
+        ui.show('play');
+      }
       return;
     }
     if (state !== 'play') return;
@@ -278,6 +284,12 @@ async function main() {
       case 'finish': {
         audio.finishFanfare();
         audio.stopMusic();
+        const prevBest = load<number>('bestScore', 0);
+        if (ev.score > prevBest) save('bestScore', ev.score);
+        const savedCenters = new Set<CenterId>(load<CenterId[]>('collectedCenters', []));
+        for (const c of sim.collectedCenters) savedCenters.add(c);
+        save('collectedCenters', Array.from(savedCenters));
+
         const myRunner = latestRoom.activeRunners.find((r) => r.id === savedProfile.id);
         const rank = myRunner ? myRunner.rank : 1;
         state = 'over';
@@ -306,10 +318,27 @@ async function main() {
   }
 
   function tick(dt: number, draw = true) {
-    if (state === 'play') {
+    if (isTvMode) {
+      // TV Live Arena: lock camera & track to room referenceDistance without local player obstacle hits
+      sim.invincible = true;
+      if (latestRoom.phase === 'RUNNING') {
+        const elapsed = Math.max(0, latestRoom.matchDuration - latestRoom.phaseTimeLeft);
+        sim.matchDuration = latestRoom.matchDuration;
+        sim.time = elapsed;
+        sim.floor = latestRoom.currentFloor;
+        sim.d = latestRoom.referenceDistance;
+        sim.speed = speedAtProgress(sim.progress01);
+        sim.track.ensure(sim.d + VIEW_AHEAD);
+        sim.recycle();
+      } else {
+        sim.speed = 0;
+      }
+      sim.drainEvents();
+    } else if (state === 'play') {
+      sim.invincible = false;
       sim.update(dt);
       netPublishTimer += dt;
-      if (!soloRun && !isTvMode && netPublishTimer >= 0.2) {
+      if (!soloRun && netPublishTimer >= 0.2) {
         netPublishTimer = 0;
         net.sendRunnerState(savedProfile.id, {
           lane: sim.lane,
@@ -325,11 +354,11 @@ async function main() {
       }
     }
 
-    const events = sim.drainEvents();
+    const events = isTvMode ? [] : sim.drainEvents();
     for (const ev of events) handleSimEvent(ev);
 
-    const inMenu = state === 'start' && !isTvMode;
-    if (!inMenu) {
+    const inMenu = isTvMode ? latestRoom.phase === 'LOBBY' : state === 'start';
+    if (!inMenu && !isTvMode) {
       world.player.update(sim, state === 'pause' ? 0 : dt, events);
     }
     world.sync(sim, state === 'pause' ? 0 : dt, inMenu, latestRoom.activeRunners, savedProfile.id, isTvMode);

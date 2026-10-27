@@ -1,6 +1,6 @@
 // The game rules, with no three.js in it: the runner, obstacles, coins, 9-Center power-ups, 180s timer, and score.
 import {
-  PLAYER, GRAVITY, JUMP_V, SUPER_JUMP_V, OB, laneX, speedAt, MAGNET_RANGE, VIEW_AHEAD, LANE_COUNT,
+  PLAYER, GRAVITY, JUMP_V, SUPER_JUMP_V, OB, laneX, speedAtProgress, MAGNET_RANGE, VIEW_AHEAD, LANE_COUNT,
   trainLength, moverFront, moverSpan, DEFAULT_MATCH_DURATION, POWER_DURATION, PICKUP_PULL_RANGE,
   floorAtProgress, zoneAtProgress, baseMultForFloor,
 } from '../config';
@@ -72,6 +72,7 @@ export class Sim {
   zoneId: ZoneId = 1;
   sinceStumble = 99;
   stumbleSlow = 0;
+  frontHitSlow = false;
   invulnerableT = 0;
   hitCount = 0;
   ignoreId = -1;
@@ -136,11 +137,11 @@ export class Sim {
       lane: 1, fromX: 0, laneT: 1, x: 0, y: 0, vy: 0, grounded: true, groundY: 0, slideT: 0, fastFall: false,
       slideQueued: false, coyoteT: 0, jumpBufT: 0, d: 0, speed: 0, alive: true, running: false, finished: false,
       time: 0, matchDuration, floor: 1, zoneId: 1 as ZoneId,
-      sinceStumble: 99, stumbleSlow: 0, invulnerableT: 0, hitCount: 0,
+      sinceStumble: 99, stumbleSlow: 0, frontHitSlow: false, invulnerableT: 0, hitCount: 0,
       ignoreId: -1, ignoreT: 0, airTime: 0, peakY: 0, coins: 0, coinStreak: 0,
       coinStreakT: 0, score: 0, baseMult: 1, activeCenter: null, centerTimer: 0, shieldHits: 0,
     });
-    this.track.reset(seed, tutorial);
+    this.track.reset(seed, tutorial, matchDuration);
     if (!this.noSpawn) this.track.ensure(VIEW_AHEAD);
   }
 
@@ -201,9 +202,14 @@ export class Sim {
   // ------------------------------------------------------------------ 9 Center Abilities
   activateCenter(centerId: CenterId) {
     const firstTime = !this.collectedCenters.has(centerId);
+    const wasAirborne = this.activeCenter === 1 || !this.grounded;
     this.collectedCenters.add(centerId);
     this.activeCenter = centerId;
     this.centerTimer = POWER_DURATION;
+    this.shieldHits = centerId === 4 ? 2 : 0;
+    // Review Focus #3 & Spec 5.2: grant >= 1.0s invulnerability (1.5s if switching from airborne)
+    this.invulnerableT = Math.max(this.invulnerableT, wasAirborne ? 1.5 : 1.0);
+    const pickupBonus = firstTime ? 300 : 150;
     this.events.push({ type: 'centerPower', centerId, x: this.x, y: this.y, firstTime });
 
     switch (centerId) {
@@ -212,30 +218,37 @@ export class Sim {
         this.vy = 0;
         this.y = Math.max(this.y, 4.2);
         this.slideT = 0;
-        this.score += 150;
+        this.score += pickupBonus;
         break;
-      case 2: // Robo-Wingman Drones: auto-dodge barriers + 3-lane coin magnet
-        this.score += 150;
+      case 2: // Robo-Wingman Drones: laser-destroys barriers within 28m for +50 pts + 3-lane magnet
+        this.score += pickupBonus;
+        this.laserDestroyBarriers();
         break;
       case 3: // EV Express Train Armor: smash obstacles for +100 bonus
-        this.score += 150;
+        this.score += pickupBonus;
         break;
-      case 4: // Green Energy Shield: blocks up to 2 hits
+      case 4: // Green Energy Shield: blocks up to 2 hits + spawns green energy coins
         this.shieldHits = 2;
-        this.score += 150;
+        this.score += pickupBonus;
+        if (!this.noSpawn) {
+          for (let i = 1; i <= 4; i++) {
+            this.addCoin(this.lane, this.d + i * 2.5, Math.max(0.8, this.y + 0.4), true);
+          }
+        }
         break;
       case 5: // 5G Super Magnet: wide magnet + 2x multiplier
-        this.score += 150;
+        this.score += pickupBonus;
         break;
       case 6: // Radar Path Scanner: convert barriers ahead into coins
-        this.score += 150;
+        this.score += pickupBonus;
         this.scanAndConvertBarriers();
         break;
       case 7: // Bio-Chem Bouncer Boots: super jump + 2x multiplier
-        this.score += 150;
+        this.score += pickupBonus;
         break;
       case 8: // Med-Tech Recovery Drone: clear slowdown + +500 recovery bonus + coin burst
         this.stumbleSlow = 0;
+        this.frontHitSlow = false;
         this.invulnerableT = Math.max(this.invulnerableT, 2.5);
         this.score += 500;
         if (!this.noSpawn) {
@@ -244,9 +257,21 @@ export class Sim {
           }
         }
         break;
-      case 9: // Space Rocket Fever: low-gravity moon jump + star magnet + 3x score
-        this.score += 200;
+      case 9: // Space Rocket Fever: low-gravity moon jump + star magnet + 3x score + obstacle immunity
+        this.score += pickupBonus;
         break;
+    }
+  }
+
+  private laserDestroyBarriers() {
+    for (let i = this.obs.length - 1; i >= 0; i--) {
+      const o = this.obs[i];
+      if (o.d0 > this.d && o.d0 < this.d + 28 && (o.kind === 'low' || o.kind === 'hurdle' || o.kind === 'overhead')) {
+        this.score += 50;
+        this.events.push({ type: 'armorSmash', kind: o.kind, x: laneX(o.lane), y: this.y, bonus: 50 });
+        this.freeObs.push(o);
+        this.obs.splice(i, 1);
+      }
     }
   }
 
@@ -297,7 +322,7 @@ export class Sim {
     }
   }
   private doJump() {
-    const sup = this.activeCenter === 2 || this.activeCenter === 7 || this.activeCenter === 9;
+    const sup = this.activeCenter === 7 || this.activeCenter === 9;
     this.vy = sup ? SUPER_JUMP_V : JUMP_V;
     this.grounded = false;
     this.coyoteT = 0;
@@ -366,6 +391,7 @@ export class Sim {
     // Timers
     this.sinceStumble += dt;
     this.stumbleSlow = Math.max(0, this.stumbleSlow - dt);
+    if (this.stumbleSlow === 0) this.frontHitSlow = false;
     this.invulnerableT = Math.max(0, this.invulnerableT - dt);
     this.ignoreT = Math.max(0, this.ignoreT - dt);
     this.coyoteT = Math.max(0, this.coyoteT - dt);
@@ -377,22 +403,27 @@ export class Sim {
     if (this.activeCenter !== null && this.centerTimer > 0) {
       const prevCenter = this.activeCenter;
       this.centerTimer = Math.max(0, this.centerTimer - dt);
-      if (prevCenter === 6) {
+      if (prevCenter === 2) {
+        this.laserDestroyBarriers();
+      } else if (prevCenter === 6) {
         this.scanAndConvertBarriers();
       }
       if (this.centerTimer === 0) {
         this.activeCenter = null;
-        // Review Focus #2: safe landing invulnerability when airborne power-up expires
-        if (prevCenter === 1 || prevCenter === 9 || !this.grounded) {
-          this.invulnerableT = Math.max(this.invulnerableT, 1.5);
-        }
+        this.shieldHits = 0;
+        // Review Focus #2 & Spec 5.2: safe landing invulnerability on power-up expiry
+        const grace = (prevCenter === 1 || prevCenter === 9 || !this.grounded) ? 1.5 : 1.0;
+        this.invulnerableT = Math.max(this.invulnerableT, grace);
         this.events.push({ type: 'centerPowerEnd', centerId: prevCenter });
       }
     }
 
-    // Speed
-    const base = this.speedOverride || speedAt(this.d);
-    let speedFactor = this.stumbleSlow > 0 ? 0.78 : 1;
+    // Speed (Spec 5.1 & 5.3: linear progress ramp + 0.65x front hit slow / 0.85x side stumble slow)
+    const base = this.speedOverride || speedAtProgress(p01);
+    let speedFactor = 1;
+    if (this.stumbleSlow > 0) {
+      speedFactor = this.frontHitSlow ? 0.65 : 0.85;
+    }
     if (this.activeCenter === 1 || this.activeCenter === 9) speedFactor *= 1.35;
     else if (this.activeCenter === 3) speedFactor *= 1.2;
     this.speed = base * speedFactor;
@@ -404,21 +435,6 @@ export class Sim {
       this.laneT = Math.min(1, this.laneT + dt / PLAYER.laneTime);
       this.x = this.fromX + (laneX(this.lane) - this.fromX) * easeOut(this.laneT);
     } else this.x = laneX(this.lane);
-
-    // Center #2 Robo-Wingman Drones auto-assist
-    if (this.activeCenter === 2 && this.grounded) {
-      for (const o of this.obs) {
-        if (o.lane === this.lane && o.d0 > this.d && o.d0 - this.d < 3.6) {
-          if (o.kind === 'overhead' && !this.sliding) {
-            this.startSlide();
-            break;
-          } else if (o.kind === 'low' || o.kind === 'hurdle') {
-            this.doJump();
-            break;
-          }
-        }
-      }
-    }
 
     // Up and down movement
     if (this.activeCenter === 1) {
@@ -455,7 +471,9 @@ export class Sim {
       if (!this.grounded && this.y <= this.groundY && this.vy <= 0) this.land();
     }
 
-    this.collide(prevX, prevY, prevD, prevH);
+    if (!this.invincible) {
+      this.collide(prevX, prevY, prevD, prevH);
+    }
     this.collectPickups(dt);
     this.hints();
 
@@ -504,7 +522,7 @@ export class Sim {
   }
 
   private collide(px: number, py: number, pd: number, ph: number) {
-    if (this.activeCenter === 1) return; // flying above all obstacles
+    if (this.activeCenter === 1 || this.activeCenter === 9) return; // immune to obstacles while flying / rocketing
     const h = this.bodyH;
     for (let i = this.obs.length - 1; i >= 0; i--) {
       const o = this.obs[i];
@@ -609,19 +627,25 @@ export class Sim {
     this.ignoreId = o.id;
     this.ignoreT = 0.6;
     this.sinceStumble = 0;
-    this.stumbleSlow = Math.max(this.stumbleSlow, 0.6);
+    if (this.stumbleSlow < 0.6) {
+      this.stumbleSlow = 0.6;
+      this.frontHitSlow = false;
+    }
     this.invulnerableT = Math.max(this.invulnerableT, 0.6);
     this.score = Math.max(0, this.score - PLAYER.sideHitPenalty);
     this.events.push({ type: 'stumble', x: this.x, y: this.y, penalty: PLAYER.sideHitPenalty });
   }
 
-  /** Forgiving No-Death Front Collision: -50 pts (clamped >= 0), 1.2s slowdown, 1.5s invulnerability. */
+  /** Forgiving No-Death Front Collision: -50 pts (clamped >= 0), 1.2s slowdown (0.65x), 1.5s invulnerability, coinStreak reset. */
   private frontHit(o?: Ob) {
     this.alive = true; // Never kill the player during the 180s match
     this.hitCount++;
     this.slideT = 0;
+    this.coinStreak = 0;
+    this.coinStreakT = 0;
     this.sinceStumble = 0;
     this.stumbleSlow = PLAYER.frontHitSlowDuration;
+    this.frontHitSlow = true;
     this.invulnerableT = PLAYER.frontHitInvulnDuration;
     this.score = Math.max(0, this.score - PLAYER.frontHitPenalty);
     if (o) {
@@ -661,8 +685,8 @@ export class Sim {
     for (let i = this.pickups.length - 1; i >= 0; i--) {
       const cp = this.pickups[i];
       const x = laneX(cp.lane);
-      // Generous pickup pull/hit radius so players don't miss capsules
-      if (Math.abs(cp.d - this.d) < PICKUP_PULL_RANGE * 0.65 && Math.abs(x - this.x) < PICKUP_PULL_RANGE * 0.65 && Math.abs(cp.y - (this.y + h * 0.5)) < 2.4) {
+      const yMatch = this.activeCenter === 1 || Math.abs(cp.y - (this.y + h * 0.5)) < 2.5;
+      if (Math.abs(cp.d - this.d) < PICKUP_PULL_RANGE * 0.65 && Math.abs(x - this.x) < PICKUP_PULL_RANGE * 0.65 && yMatch) {
         this.activateCenter(cp.centerId);
         this.freePickups.push(cp);
         this.pickups.splice(i, 1);
@@ -679,7 +703,7 @@ export class Sim {
     }
   }
 
-  private recycle() {
+  public recycle() {
     const behind = this.d - 14;
     for (let i = this.obs.length - 1; i >= 0; i--) {
       if (this.obs[i].d1 < behind) this.freeObs.push(this.obs.splice(i, 1)[0]);

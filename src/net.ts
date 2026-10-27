@@ -411,6 +411,7 @@ export type NetMessage =
   | { type: 'join'; profile: PlayerProfile }
   | { type: 'state'; id: string; state: Partial<RunnerNetState> }
   | { type: 'host'; command: HostCommand }
+  | { type: 'request_sync' }
   | { type: 'snapshot'; snapshot: RoomSnapshot };
 
 /**
@@ -426,6 +427,8 @@ export class NetClient {
   private latestSnapshot: RoomSnapshot;
   private listeners: Array<(snap: RoomSnapshot) => void> = [];
   private isAuthorityTab = false;
+  private lastAuthoritySnapshotAt = 0;
+  private lastJoinedProfile: PlayerProfile | null = null;
   private timerId: number | null = null;
 
   constructor(private isTvMode = false) {
@@ -440,9 +443,20 @@ export class NetClient {
         this.bc.onmessage = (ev: MessageEvent<NetMessage>) => {
           this.handleChannelMessage(ev.data);
         };
+        if (!this.isAuthorityTab) {
+          this.bc.postMessage({ type: 'request_sync' } satisfies NetMessage);
+        }
       }
       this.connectWebSocket();
       this.startLocalLoop();
+    }
+  }
+
+  setTvMode(tv: boolean) {
+    this.isTvMode = tv;
+    this.isAuthorityTab = tv;
+    if (tv && !this.wsConnected) {
+      this.bc?.postMessage({ type: 'snapshot', snapshot: this.latestSnapshot } satisfies NetMessage);
     }
   }
 
@@ -453,6 +467,9 @@ export class NetClient {
       const ws = new WebSocket(`${proto}//${host}:8787`);
       ws.onopen = () => {
         this.wsConnected = true;
+        if (this.lastJoinedProfile) {
+          ws.send(JSON.stringify({ type: 'join', profile: this.lastJoinedProfile } satisfies NetMessage));
+        }
       };
       ws.onmessage = (ev) => {
         try {
@@ -481,8 +498,15 @@ export class NetClient {
     if (this.wsConnected) return;
     if (msg.type === 'snapshot') {
       if (!this.isAuthorityTab) {
+        this.lastAuthoritySnapshotAt = Date.now();
         this.latestSnapshot = msg.snapshot;
         this.emit();
+      }
+      return;
+    }
+    if (msg.type === 'request_sync') {
+      if (this.isAuthorityTab) {
+        this.bc?.postMessage({ type: 'snapshot', snapshot: this.latestSnapshot } satisfies NetMessage);
       }
       return;
     }
@@ -494,7 +518,9 @@ export class NetClient {
     } else if (msg.type === 'host') {
       this.localRoom.hostCommand(msg.command);
     }
-    this.latestSnapshot = this.localRoom.getSnapshot();
+    if (this.isAuthorityTab || Date.now() - this.lastAuthoritySnapshotAt >= 1200) {
+      this.latestSnapshot = this.localRoom.getSnapshot();
+    }
     if (this.isAuthorityTab) {
       this.bc?.postMessage({ type: 'snapshot', snapshot: this.latestSnapshot } satisfies NetMessage);
     }
@@ -508,6 +534,10 @@ export class NetClient {
       const dt = Math.min(0.25, (now - last) / 1000);
       last = now;
       if (this.wsConnected) return;
+      // If a TV authority tab is actively broadcasting snapshots, do not overwrite with our localRoom!
+      if (!this.isAuthorityTab && Date.now() - this.lastAuthoritySnapshotAt < 1200) {
+        return;
+      }
 
       this.localRoom.tick(dt);
       this.latestSnapshot = this.localRoom.getSnapshot();
@@ -528,12 +558,15 @@ export class NetClient {
   }
 
   join(profile: PlayerProfile) {
+    this.lastJoinedProfile = profile;
     const msg: NetMessage = { type: 'join', profile };
     if (this.wsConnected && this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
     } else {
       this.localRoom.join(profile);
-      this.latestSnapshot = this.localRoom.getSnapshot();
+      if (this.isAuthorityTab || Date.now() - this.lastAuthoritySnapshotAt >= 1200) {
+        this.latestSnapshot = this.localRoom.getSnapshot();
+      }
       this.bc?.postMessage(msg);
       this.emit();
     }
