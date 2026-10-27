@@ -1,4 +1,4 @@
-// Procedural canvas textures + 10-Floor Zone Atmosphere Palettes + 9-Center capsule textures.
+// Procedural canvas textures + 10-Floor Zone Atmosphere Palettes + 9-Center capsule & billboard textures.
 import * as THREE from 'three';
 import { CENTERS } from '../config';
 import type { CenterId, ZoneId } from '../sim/types';
@@ -17,39 +17,39 @@ export interface ZonePalette {
 export const ZONE_PALETTES: Record<ZoneId, ZonePalette> = {
   1: {
     zoneId: 1,
-    nameTh: 'ชั้น 1: โถงนิทรรศการหลัก (Main Exhibition Hall)',
-    skyTopHex: '#1d4ed8',
-    skyBottomHex: '#7dd3fc',
-    fogHex: '#bae6fd',
-    sunHex: '#fff1dc',
+    nameTh: 'ชั้น 1: โถงนิทรรศการหลัก (Aero · EV · Green · 5G)',
+    skyTopHex: '#0f172a',
+    skyBottomHex: '#0284c7',
+    fogHex: '#0c4a6e',
+    sunHex: '#e0f2fe',
     neonHex: '#38bdf8',
-    starIntensity: 0.0,
+    starIntensity: 0.1,
   },
   2: {
     zoneId: 2,
-    nameTh: 'ชั้น 2–6: โรงประลองหุ่นยนต์และสมาร์ทแล็บ (Robotics & Smart Labs)',
-    skyTopHex: '#312e81',
-    skyBottomHex: '#fb923c',
-    fogHex: '#fed7aa',
-    sunHex: '#fde68a',
+    nameTh: 'ชั้น 2–6: โรงประลองหุ่นยนต์อัตโนมัติ (Robotics & Smart Labs)',
+    skyTopHex: '#1e1b4b',
+    skyBottomHex: '#c2410c',
+    fogHex: '#431407',
+    sunHex: '#fed7aa',
     neonHex: '#fb923c',
-    starIntensity: 0.15,
+    starIntensity: 0.25,
   },
   3: {
     zoneId: 3,
-    nameTh: 'ชั้น 8: ห้องปฏิบัติการเรดาร์และไบโอเทค (Radar & Bio-Chem Labs)',
-    skyTopHex: '#064e3b',
-    skyBottomHex: '#14b8a6',
-    fogHex: '#99f6e4',
-    sunHex: '#a7f3d0',
+    nameTh: 'ชั้น 8: แล็บเรดาร์และเทคโนโลยีชีวภาพ (Radar & Bio-Chem)',
+    skyTopHex: '#022c22',
+    skyBottomHex: '#0d9488',
+    fogHex: '#064e3b',
+    sunHex: '#99f6e4',
     neonHex: '#2dd4bf',
-    starIntensity: 0.45,
+    starIntensity: 0.5,
   },
   4: {
     zoneId: 4,
     nameTh: 'ชั้น 9–10: เมดเทคและรันเวย์อวกาศ (Med-Tech & Space Runway)',
-    skyTopHex: '#090d16',
-    skyBottomHex: '#3b0764',
+    skyTopHex: '#030712',
+    skyBottomHex: '#581c87',
     fogHex: '#1e1b4b',
     sunHex: '#f472b6',
     neonHex: '#f472b6',
@@ -113,84 +113,173 @@ function tex(c: HTMLCanvasElement, repeat = true) {
 let seed = 7;
 const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 
-/** One lane of futuristic TechnoPark track: dark carbon ballast, metallic sleepers, and glowing cyan/silver rails. */
+/** Futuristic TechnoPark Maglev/Express Track: carbon-fiber base, glowing energy conduits, and metallic rails. */
 export function trackTexture() {
   const S = 256;
   const { c, g } = canvas(S, S);
-  g.fillStyle = '#475569';
+  g.fillStyle = '#0f172a';
   g.fillRect(0, 0, S, S);
-  for (let i = 0; i < 2000; i++) {
-    const v = 55 + rnd() * 55;
-    g.fillStyle = `rgb(${v},${v + 8},${v + 18})`;
-    g.fillRect(rnd() * S, rnd() * S, 2 + rnd() * 3, 2 + rnd() * 3);
+  // Tech grid lines
+  g.strokeStyle = 'rgba(56, 189, 248, 0.14)';
+  g.lineWidth = 2;
+  for (let i = 0; i <= 8; i++) {
+    const pos = i * (S / 8);
+    g.beginPath(); g.moveTo(0, pos); g.lineTo(S, pos); g.stroke();
+    g.beginPath(); g.moveTo(pos, 0); g.lineTo(pos, S); g.stroke();
   }
-  // sleepers
+  // Maglev sleepers
   for (let k = 0; k < 4; k++) {
     const y = k * (S / 4) + 10;
     g.fillStyle = '#1e293b';
-    g.fillRect(18, y, S - 36, 24);
+    g.fillRect(16, y, S - 32, 24);
     g.fillStyle = '#334155';
-    g.fillRect(18, y, S - 36, 7);
-    // neon center pulse strip on sleeper
-    g.fillStyle = 'rgba(56, 189, 248, 0.45)';
-    g.fillRect(S / 2 - 18, y + 9, 36, 5);
+    g.fillRect(16, y, S - 32, 6);
+    // Glowing cyan energy core in center of sleeper
+    g.fillStyle = '#38bdf8';
+    g.fillRect(S / 2 - 26, y + 9, 52, 6);
   }
-  // rails
+  // Maglev guide rails
   for (const x of [0.24, 0.76]) {
-    g.fillStyle = '#0f172a';
+    g.fillStyle = '#090d16';
     g.fillRect(x * S - 8, 0, 16, S);
-    g.fillStyle = '#e2e8f0';
+    g.fillStyle = '#cbd5e1';
     g.fillRect(x * S - 4, 0, 8, S);
     g.fillStyle = '#38bdf8';
-    g.fillRect(x * S - 1, 0, 2, S);
+    g.fillRect(x * S - 1.5, 0, 3, S);
   }
   return tex(c);
 }
 
+/** High-tech laboratory walkway slabs with glowing circuit seams. */
 export function pavingTexture() {
   const S = 256;
   const { c, g } = canvas(S, S);
-  g.fillStyle = '#94a3b8';
+  g.fillStyle = '#1e293b';
   g.fillRect(0, 0, S, S);
-  for (let i = 0; i < 600; i++) {
-    const v = 140 + rnd() * 40;
-    g.fillStyle = `rgba(${v},${v + 5},${v + 12},0.45)`;
-    g.fillRect(rnd() * S, rnd() * S, 2, 2);
+  g.strokeStyle = '#38bdf8';
+  g.globalAlpha = 0.35;
+  g.lineWidth = 3;
+  for (let k = 0; k <= 4; k++) {
+    g.beginPath(); g.moveTo(0, k * 64); g.lineTo(S, k * 64); g.stroke();
+    g.beginPath(); g.moveTo(k * 64, 0); g.lineTo(k * 64, S); g.stroke();
   }
-  g.strokeStyle = '#64748b';
-  g.lineWidth = 4;
-  for (let k = 0; k <= 2; k++) {
-    g.beginPath(); g.moveTo(0, k * 128); g.lineTo(S, k * 128); g.stroke();
-    g.beginPath(); g.moveTo(k * 128, 0); g.lineTo(k * 128, S); g.stroke();
-  }
+  g.globalAlpha = 1;
   return tex(c);
 }
 
+/** Cyber circuit floor outside the track. */
 export function groundTexture() {
   const S = 128;
   const { c, g } = canvas(S, S);
-  g.fillStyle = '#334155';
+  g.fillStyle = '#090d16';
   g.fillRect(0, 0, S, S);
-  for (let i = 0; i < 400; i++) {
-    const v = rnd();
-    g.fillStyle = v > 0.5 ? 'rgba(30,41,59,0.6)' : 'rgba(56,189,248,0.18)';
-    g.fillRect(rnd() * S, rnd() * S, 3, 3);
+  g.strokeStyle = 'rgba(56, 189, 248, 0.16)';
+  g.lineWidth = 2;
+  g.strokeRect(4, 4, S - 8, S - 8);
+  for (let i = 0; i < 60; i++) {
+    g.fillStyle = rnd() > 0.5 ? 'rgba(56,189,248,0.22)' : 'rgba(168,85,247,0.18)';
+    g.fillRect(rnd() * S, rnd() * S, 4, 4);
   }
   return tex(c);
 }
 
-export function skyTexture() {
-  const { c, g } = canvas(4, 256);
-  const gr = g.createLinearGradient(0, 0, 0, 256);
-  gr.addColorStop(0, '#0f172a');
-  gr.addColorStop(0.45, '#1d4ed8');
-  gr.addColorStop(0.78, '#38bdf8');
-  gr.addColorStop(1, '#bae6fd');
-  g.fillStyle = gr;
-  g.fillRect(0, 0, 4, 256);
+/** Glass Curtain-Wall & Neon Lab Tower Facade Texture for TechnoPark side buildings. */
+export function technoTowerTexture(accentHex = '#38bdf8') {
+  const W = 256, H = 512;
+  const { c, g } = canvas(W, H);
+  g.fillStyle = '#090d16';
+  g.fillRect(0, 0, W, H);
+
+  // Illuminated laboratory windows grid
+  const cols = 4, rows = 10;
+  const padX = 12, padY = 12;
+  const winW = (W - padX * (cols + 1)) / cols;
+  const winH = (H - padY * (rows + 1)) / rows;
+
+  for (let r = 0; r < rows; r++) {
+    for (let col = 0; col < cols; col++) {
+      const x = padX + col * (winW + padX);
+      const y = padY + r * (winH + padY);
+      const lit = rnd() > 0.22;
+      g.fillStyle = lit ? accentHex : '#1e293b';
+      g.globalAlpha = lit ? (0.35 + rnd() * 0.45) : 0.5;
+      g.fillRect(x, y, winW, winH);
+      g.globalAlpha = 1;
+      g.strokeStyle = accentHex;
+      g.lineWidth = 1.5;
+      g.strokeRect(x, y, winW, winH);
+    }
+  }
+
+  // Vertical neon edge strips
+  g.fillStyle = accentHex;
+  g.fillRect(0, 0, 6, H);
+  g.fillRect(W - 6, 0, 6, H);
   return tex(c, false);
 }
-export const HORIZON = new THREE.Color('#bae6fd');
+
+/** Large Holographic Center Billboard mounted along the sides of the TechnoPark track! */
+export function centerBillboardTexture(centerId: CenterId) {
+  const W = 512, H = 256;
+  const { c, g } = canvas(W, H);
+  const meta = CENTERS[centerId];
+
+  // Dark cyber glass background
+  g.fillStyle = 'rgba(9, 13, 22, 0.94)';
+  round(g, 6, 6, W - 12, H - 12, 28);
+  g.fill();
+
+  // Glowing neon border in Center's theme color
+  g.lineWidth = 8;
+  g.strokeStyle = meta.color;
+  round(g, 10, 10, W - 20, H - 20, 24);
+  g.stroke();
+
+  // Top header pill: FLOOR + CENTER ID
+  g.fillStyle = meta.color;
+  round(g, 28, 26, W - 56, 48, 14);
+  g.fill();
+  g.fillStyle = '#090d16';
+  g.font = '900 24px system-ui, sans-serif';
+  g.textAlign = 'left';
+  g.textBaseline = 'middle';
+  g.fillText(`SUTO TECHNOPARK · ศูนย์ที่ #${meta.id}`, 44, 51);
+
+  // Icon + Short Thai Name
+  g.fillStyle = '#ffffff';
+  g.font = '900 36px system-ui, sans-serif';
+  g.fillText(`${meta.icon} ${meta.shortTh}`, 32, 118);
+
+  // Exhibition floor badge
+  g.fillStyle = '#cbd5e1';
+  g.font = 'bold 24px system-ui, sans-serif';
+  g.fillText(`📍 ${meta.exhibitionFloorTh}`, 34, 168);
+
+  // Power-up name footer
+  g.fillStyle = meta.color;
+  g.font = 'bold 22px system-ui, sans-serif';
+  g.fillText(`⚡ พลังพิเศษ: ${meta.powerName}`, 34, 212);
+
+  return tex(c, false);
+}
+
+export function skyTexture() {
+  const { c, g } = canvas(64, 256);
+  const gr = g.createLinearGradient(0, 0, 0, 256);
+  gr.addColorStop(0, '#030712');
+  gr.addColorStop(0.45, '#0f172a');
+  gr.addColorStop(0.8, '#1e3a8a');
+  gr.addColorStop(1, '#0284c7');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 64, 256);
+  // Subtle starfield in upper sky
+  g.fillStyle = 'rgba(255,255,255,0.75)';
+  for (let i = 0; i < 45; i++) {
+    g.fillRect(rnd() * 64, rnd() * 140, 1.5, 1.5);
+  }
+  return tex(c, false);
+}
+export const HORIZON = new THREE.Color('#0c4a6e');
 
 export function glowTexture() {
   const S = 64;
@@ -214,78 +303,65 @@ function round(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: 
   g.closePath();
 }
 
-/** Holographic 9-Center Capsule Card with crisp vector emblem, center number, and power label. */
+/** Holographic 9-Center Capsule Card with unmistakable icon, power code, and Thai center label. */
 export function centerCapsuleTexture(centerId: CenterId) {
   const S = 192;
   const { c, g } = canvas(S, S);
   const meta = CENTERS[centerId];
 
-  // Outer glowing frame
-  g.fillStyle = 'rgba(255,255,255,0.96)';
+  // Outer glowing white/neon frame
+  g.fillStyle = '#ffffff';
   round(g, 6, 6, S - 12, S - 12, 34);
   g.fill();
 
-  // Inner dark core
-  g.fillStyle = '#0f172a';
-  round(g, 14, 14, S - 28, S - 28, 28);
+  // Inner dark frame
+  g.fillStyle = '#090d16';
+  round(g, 12, 12, S - 24, S - 24, 28);
   g.fill();
 
-  const gr = g.createLinearGradient(0, 14, 0, S - 14);
+  // Vibrant colored gradient body
+  const gr = g.createLinearGradient(0, 16, 0, S - 16);
   gr.addColorStop(0, meta.color);
-  gr.addColorStop(1, '#090d16');
+  gr.addColorStop(1, '#0f172a');
   g.fillStyle = gr;
-  g.globalAlpha = 0.9;
   round(g, 18, 18, S - 36, S - 36, 24);
   g.fill();
-  g.globalAlpha = 1;
 
-  // Center badge number (#1..#9)
-  g.fillStyle = 'rgba(15,23,42,0.9)';
-  round(g, 24, 22, 54, 30, 10);
+  // Top-left Center ID pill (#1..#9)
+  g.fillStyle = 'rgba(9, 13, 22, 0.9)';
+  round(g, 24, 22, 56, 30, 10);
   g.fill();
-  g.fillStyle = '#ffffff';
-  g.font = 'bold 21px system-ui, sans-serif';
+  g.fillStyle = meta.color;
+  g.font = '900 20px system-ui, sans-serif';
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  g.fillText(`#${centerId}`, 51, 38);
+  g.fillText(`#${centerId}`, 52, 38);
 
-  // Crisp vector emblem in center + Emoji
-  g.save();
-  g.translate(S / 2, S / 2 - 4);
-  g.strokeStyle = '#ffffff';
-  g.fillStyle = '#ffffff';
-  g.lineWidth = 6;
-  g.beginPath();
-  g.arc(0, 0, 34, 0, Math.PI * 2);
-  g.fillStyle = 'rgba(15, 23, 42, 0.55)';
-  g.fill();
-  g.stroke();
-
+  // Center Emoji Icon + Bold English Tag (no overlapping stroke!)
   const shortTag: Record<CenterId, string> = {
-    1: 'JET',
-    2: 'ROBO',
-    3: 'TRAIN',
-    4: 'SHIELD',
-    5: '5G',
-    6: 'RADAR',
-    7: 'BIO×2',
-    8: '+500',
-    9: 'SPACE',
+    1: '✈️ JET',
+    2: '🤖 ROBO',
+    3: '🚄 TRAIN',
+    4: '🌿 SHIELD',
+    5: '📡 5G',
+    6: '🛰️ RADAR',
+    7: '🧬 BIO×2',
+    8: '➕ +500',
+    9: '🚀 SPACE',
   };
   g.fillStyle = '#ffffff';
-  g.font = '900 20px system-ui, sans-serif';
-  g.fillText(shortTag[centerId], 0, 2);
-  g.restore();
+  g.font = '900 28px system-ui, sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(shortTag[centerId], S / 2, S / 2 + 2);
 
-  // Bottom Thai short label bar
-  g.fillStyle = 'rgba(15,23,42,0.88)';
-  round(g, 24, S - 52, S - 48, 28, 9);
+  // Bottom Thai short name bar
+  g.fillStyle = 'rgba(9, 13, 22, 0.92)';
+  round(g, 22, S - 52, S - 44, 30, 10);
   g.fill();
   g.fillStyle = '#f8fafc';
   g.font = 'bold 14px system-ui, sans-serif';
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  g.fillText(meta.shortTh.slice(0, 14), S / 2, S - 38);
+  g.fillText(meta.shortTh.slice(0, 14), S / 2, S - 37);
 
   return tex(c, false);
 }
@@ -317,9 +393,9 @@ export function nameBadgeTexture(name: string, rank: number, color: string) {
 export function rampTexture() {
   const S = 128;
   const { c, g } = canvas(S, S);
-  g.fillStyle = '#facc15';
+  g.fillStyle = '#38bdf8';
   g.fillRect(0, 0, S, S);
-  g.fillStyle = '#0f172a';
+  g.fillStyle = '#090d16';
   for (let k = -2; k < 4; k++) {
     g.beginPath();
     g.moveTo(k * 48, S); g.lineTo(k * 48 + 24, S); g.lineTo(k * 48 + 24 + S, 0); g.lineTo(k * 48 + S, 0);

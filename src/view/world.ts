@@ -1,4 +1,4 @@
-// The three.js scene: 10-Floor atmosphere, 9-Center capsules, obstacles, and 3D Ghost Pack on the shared track.
+// The three.js scene: SUTO TechnoPark 10-Floor Sci-Fi Architecture, 9-Center Landmarks & Billboards, and 3D Ghost Pack.
 import * as THREE from 'three';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -8,13 +8,13 @@ import { Fx } from './fx';
 import { PlayerView } from './player';
 import {
   trackTexture, pavingTexture, groundTexture, skyTexture, glowTexture,
-  centerCapsuleTexture, nameBadgeTexture, rampTexture, HORIZON, lerpZonePalette,
+  centerCapsuleTexture, centerBillboardTexture, technoTowerTexture,
+  nameBadgeTexture, rampTexture, HORIZON, lerpZonePalette,
 } from './textures';
 import { LANE_W, laneX, CAR_LEN, CAR_GAP, VIEW_AHEAD, OB, CENTERS, CENTER_LIST } from '../config';
 import type { Sim } from '../sim/sim';
-import type { SimEvent, CenterId, Ob } from '../sim/types';
+import type { SimEvent, CenterId, ZoneId, Ob } from '../sim/types';
 import type { RunnerNetState } from '../net';
-import { Rng } from '../sim/rng';
 
 const m4 = new THREE.Matrix4();
 const q = new THREE.Quaternion();
@@ -22,7 +22,7 @@ const e = new THREE.Euler();
 const v = new THREE.Vector3();
 const one = new THREE.Vector3(1, 1, 1);
 const sc = new THREE.Vector3();
-const TRAIN_TINTS = [new THREE.Color(1, 1, 1), new THREE.Color(0.7, 0.88, 1), new THREE.Color(1, 0.78, 0.68)];
+const TRAIN_TINTS = [new THREE.Color('#38bdf8'), new THREE.Color('#facc15'), new THREE.Color('#c084fc')];
 const CENTER_COLORS: Record<CenterId, THREE.Color> = {
   1: new THREE.Color(CENTERS[1].color),
   2: new THREE.Color(CENTERS[2].color),
@@ -34,14 +34,13 @@ const CENTER_COLORS: Record<CenterId, THREE.Color> = {
   8: new THREE.Color(CENTERS[8].color),
   9: new THREE.Color(CENTERS[9].color),
 };
-const LIGHT = new THREE.Color(1.0, 0.92, 0.65);
-const LIGHT_RED = new THREE.Color(1.0, 0.25, 0.2);
+const LIGHT = new THREE.Color(0.35, 0.85, 1.0);
+const LIGHT_RED = new THREE.Color(1.0, 0.25, 0.4);
 const FLAT = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
 const GROUND_LEN = 300;
-const SIDEWALK_IN = 3.9;
-const SIDEWALK_OUT = 7.4;
-
-interface House { type: number; side: number; d: number; len: number; depth: number }
+const SIDEWALK_IN = 4.2;
+const SIDEWALK_OUT = 8.2;
+const TOWER_X = 11.5; // Placed well outside the lanes so the camera never clips into side buildings!
 
 interface GhostSlot {
   group: THREE.Group;
@@ -65,13 +64,13 @@ export class World {
   private coins: Instanced;
   private halos: Instanced;
   private centerCards: Record<CenterId, Instanced> = {} as Record<CenterId, Instanced>;
-  private poles: Instanced;
+  private centerBillboards: Record<CenterId, Instanced> = {} as Record<CenterId, Instanced>;
+  private arches: Instanced;
+  private labTowers: Instanced;
+  private zoneLandmarks: Record<ZoneId, Instanced> = {} as Record<ZoneId, Instanced>;
+  private curbMat!: THREE.MeshLambertMaterial;
+  private archBeamMat!: THREE.MeshBasicMaterial;
   private scrollTex: THREE.Texture[] = [];
-  private houses: Instanced[] = [];
-  private houseSize: { len: number; depth: number }[] = [];
-  private placed: House[] = [];
-  private nextHouse = [0, 0];
-  private rng = new Rng(99);
   private ghostSlots: GhostSlot[] = [];
   private camY = 0;
   private shake = 0;
@@ -82,12 +81,12 @@ export class World {
   constructor(core: GLTF, quality: { shadowSize: number }) {
     const s = this.scene;
     s.background = skyTexture();
-    s.fog = new THREE.Fog(HORIZON, 40, 185);
+    s.fog = new THREE.Fog(HORIZON, 45, 195);
     this.camera = new THREE.PerspectiveCamera(60, 1, 0.3, 260);
-    this.hemi = new THREE.HemisphereLight(0xdcecff, 0x334155, 1.35);
+    this.hemi = new THREE.HemisphereLight(0xbae6fd, 0x0f172a, 1.45);
     s.add(this.hemi);
-    this.sun = new THREE.DirectionalLight(0xfff1dc, 2.1);
-    this.sun.position.set(9, 22, 4);
+    this.sun = new THREE.DirectionalLight(0xe0f2fe, 2.1);
+    this.sun.position.set(9, 24, 4);
     this.sun.target.position.set(0, 0, -14);
     this.sun.castShadow = true;
     const sh = this.sun.shadow;
@@ -98,13 +97,10 @@ export class World {
     s.add(this.sun, this.sun.target);
 
     this.buildGround();
-
-    const post = new THREE.BoxGeometry(0.18, 6.9, 0.18).translate(0, 3.45, 0);
-    const arm = new THREE.BoxGeometry(1.9, 0.12, 0.12).translate(-0.85, 6.6, 0);
-    const lamp = new THREE.BoxGeometry(0.5, 0.14, 0.3).translate(-1.7, 6.48, 0);
-    const poleGeo = mergeGeometries([post, arm, lamp])!;
-    const poleMesh = new THREE.Mesh(poleGeo, new THREE.MeshLambertMaterial({ color: 0x475569 }));
-    this.poles = new Instanced(poleMesh, 40, s, { cast: true, name: 'pole' });
+    this.arches = this.buildCyberArches(s);
+    this.labTowers = this.buildTechnoTowers(s);
+    this.buildZoneLandmarks(s);
+    this.buildCenterBillboards(s);
 
     const node = (n: string) => {
       const o = core.scene.getObjectByName(n);
@@ -132,10 +128,10 @@ export class World {
     this.halos = new Instanced(glow, 380, s, { colors: true });
     for (const p of this.halos.parts) p.mesh.renderOrder = 4;
 
-    // 9 Center Pickup Capsules
+    // 9 Center Pickup Capsules on the track
     for (const meta of CENTER_LIST) {
       const m = new THREE.Mesh(
-        new THREE.PlaneGeometry(1.25, 1.25),
+        new THREE.PlaneGeometry(1.3, 1.3),
         new THREE.MeshBasicMaterial({ map: centerCapsuleTexture(meta.id), transparent: true, alphaTest: 0.1 }),
       );
       m.name = 'center-card-' + meta.id;
@@ -147,6 +143,109 @@ export class World {
     this.fx = new Fx(s);
   }
 
+  /** High-span futuristic TechnoPark portal arches (replaces low wires so flying at y=4.2m never clips!). */
+  private buildCyberArches(scene: THREE.Scene): Instanced {
+    const grp = new THREE.Group();
+    grp.name = 'cyber-arch';
+    const pillarMat = new THREE.MeshLambertMaterial({ color: 0x1e293b });
+    this.archBeamMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+
+    const pL = new THREE.Mesh(new THREE.BoxGeometry(0.32, 9.2, 0.32), pillarMat);
+    pL.position.set(-SIDEWALK_IN - 0.3, 4.6, 0);
+    const pR = new THREE.Mesh(new THREE.BoxGeometry(0.32, 9.2, 0.32), pillarMat);
+    pR.position.set(SIDEWALK_IN + 0.3, 4.6, 0);
+    const topBar = new THREE.Mesh(new THREE.BoxGeometry((SIDEWALK_IN + 0.4) * 2, 0.22, 0.28), this.archBeamMat);
+    topBar.position.set(0, 9.1, 0);
+
+    grp.add(pL, pR, topBar);
+    return new Instanced(grp, 24, scene, { cast: false, name: 'arch' });
+  }
+
+  /** Sleek glass & neon TechnoPark laboratory towers flanking both sides of the track. */
+  private buildTechnoTowers(scene: THREE.Scene): Instanced {
+    const tex = technoTowerTexture('#38bdf8');
+    const geo = new THREE.BoxGeometry(5.5, 18, 9.5);
+    geo.translate(0, 9, 0);
+    const mat = new THREE.MeshLambertMaterial({ map: tex, color: 0xffffff });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.name = 'techno-tower';
+    return new Instanced(mesh, 36, scene, { cast: false, receive: true, colors: true, name: 'tower' });
+  }
+
+  /** 4 Zone-Specific 3D Science & Engineering Landmarks along the sidewalk! */
+  private buildZoneLandmarks(scene: THREE.Scene) {
+    // Zone 1 (Floor 1: Green Energy Wind Turbine + 5G Antenna Spire)
+    const z1 = new THREE.Group();
+    z1.name = 'landmark-z1';
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.24, 6.8, 10), new THREE.MeshLambertMaterial({ color: 0xe2e8f0 }));
+    mast.position.y = 3.4;
+    const hub = new THREE.Mesh(new THREE.SphereGeometry(0.32, 10, 10), new THREE.MeshBasicMaterial({ color: 0x4ade80 }));
+    hub.position.y = 6.8;
+    const ring5g = new THREE.Mesh(new THREE.TorusGeometry(0.95, 0.06, 8, 20), new THREE.MeshBasicMaterial({ color: 0xc084fc }));
+    ring5g.position.y = 6.8;
+    for (let i = 0; i < 3; i++) {
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.16, 2.3, 0.06), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
+      blade.position.y = 6.8;
+      blade.rotation.z = (i * Math.PI * 2) / 3;
+      blade.translateY(1.1);
+      z1.add(blade);
+    }
+    z1.add(mast, hub, ring5g);
+    this.zoneLandmarks[1] = new Instanced(z1, 20, scene, { name: 'lm-z1' });
+
+    // Zone 2 (Floors 2-6: Robotics & Smart Factory Articulated Arm + Laser Gate)
+    const z2 = new THREE.Group();
+    z2.name = 'landmark-z2';
+    const base2 = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.75, 0.8, 8), new THREE.MeshLambertMaterial({ color: 0x334155 }));
+    base2.position.y = 0.4;
+    const arm1 = new THREE.Mesh(new THREE.BoxGeometry(0.35, 3.6, 0.35), new THREE.MeshBasicMaterial({ color: 0xfb923c }));
+    arm1.position.set(0, 2.2, 0);
+    arm1.rotation.z = 0.25;
+    const claw = new THREE.Mesh(new THREE.TorusGeometry(0.65, 0.1, 8, 16), new THREE.MeshBasicMaterial({ color: 0xfacc15 }));
+    claw.position.set(-0.45, 4.1, 0);
+    z2.add(base2, arm1, claw);
+    this.zoneLandmarks[2] = new Instanced(z2, 20, scene, { name: 'lm-z2' });
+
+    // Zone 3 (Floor 8: Radar Dome + Bio-Chem Glowing DNA Helix Column)
+    const z3 = new THREE.Group();
+    z3.name = 'landmark-z3';
+    const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.7, 2.6, 12), new THREE.MeshLambertMaterial({ color: 0x0f766e }));
+    pedestal.position.y = 1.3;
+    const radome = new THREE.Mesh(new THREE.IcosahedronGeometry(1.15, 1), new THREE.MeshBasicMaterial({ color: 0x2dd4bf, wireframe: true }));
+    radome.position.y = 3.5;
+    const bioRing = new THREE.Mesh(new THREE.TorusGeometry(1.35, 0.07, 8, 20), new THREE.MeshBasicMaterial({ color: 0xa3e635 }));
+    bioRing.rotation.x = Math.PI / 3;
+    bioRing.position.y = 3.5;
+    z3.add(pedestal, radome, bioRing);
+    this.zoneLandmarks[3] = new Instanced(z3, 20, scene, { name: 'lm-z3' });
+
+    // Zone 4 (Floors 9-10: Space Rocket Booster & Med-Tech Holo-Pylon)
+    const z4 = new THREE.Group();
+    z4.name = 'landmark-z4';
+    const rocketBody = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.55, 5.2, 12), new THREE.MeshLambertMaterial({ color: 0xf8fafc }));
+    rocketBody.position.y = 2.6;
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.5, 12), new THREE.MeshBasicMaterial({ color: 0xf472b6 }));
+    nose.position.y = 5.95;
+    const orbit = new THREE.Mesh(new THREE.TorusGeometry(1.1, 0.06, 8, 24), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
+    orbit.rotation.x = Math.PI / 2.4;
+    orbit.position.y = 3.2;
+    z4.add(rocketBody, nose, orbit);
+    this.zoneLandmarks[4] = new Instanced(z4, 20, scene, { name: 'lm-z4' });
+  }
+
+  /** Large Holographic Billboards displaying each of the 9 TechnoPark Research Centers along the track! */
+  private buildCenterBillboards(scene: THREE.Scene) {
+    for (const meta of CENTER_LIST) {
+      const plane = new THREE.Mesh(
+        new THREE.PlaneGeometry(5.6, 2.8),
+        new THREE.MeshBasicMaterial({ map: centerBillboardTexture(meta.id), side: THREE.DoubleSide }),
+      );
+      plane.position.y = 4.4;
+      plane.name = 'billboard-' + meta.id;
+      this.centerBillboards[meta.id] = new Instanced(plane, 6, scene, { name: 'bb-' + meta.id });
+    }
+  }
+
   private buildGhostPackPool(core: GLTF, scene: THREE.Scene) {
     const ringGeo = new THREE.RingGeometry(0.38, 0.56, 24);
     ringGeo.rotateX(-Math.PI / 2);
@@ -156,7 +255,6 @@ export class World {
       const group = new THREE.Group();
       group.visible = false;
 
-      // Clone the real 3D character from PlayerView so bots/ghosts look like real runners!
       const charClone = cloneSkinned(this.player.model);
       charClone.scale.set(0.92, 0.92, 0.92);
       const mixer = new THREE.AnimationMixer(charClone);
@@ -164,7 +262,7 @@ export class World {
         const act = mixer.clipAction(runClip);
         act.timeScale = 1.15;
         act.play();
-        mixer.update(i * 0.23); // desync footsteps between bots
+        mixer.update(i * 0.23);
       }
 
       const ringMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, side: THREE.DoubleSide, transparent: true, opacity: 0.8 });
@@ -208,7 +306,7 @@ export class World {
     const pave = pavingTexture();
     pave.repeat.set(2, GROUND_LEN / 1.75);
     const paveMat = new THREE.MeshLambertMaterial({ map: pave });
-    const curbMat = new THREE.MeshLambertMaterial({ color: 0x38bdf8 });
+    this.curbMat = new THREE.MeshLambertMaterial({ color: 0x38bdf8, emissive: 0x0284c7 });
     for (const side of [-1, 1]) {
       const w = SIDEWALK_OUT - SIDEWALK_IN;
       const m = new THREE.Mesh(new THREE.PlaneGeometry(w, GROUND_LEN), paveMat);
@@ -216,49 +314,31 @@ export class World {
       m.position.set(side * (SIDEWALK_IN + w / 2), 0.25, z);
       m.receiveShadow = true;
       s.add(m);
-      const curb = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.25, GROUND_LEN), curbMat);
-      curb.position.set(side * (SIDEWALK_IN - 0.1), 0.125, z);
+      const curb = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.28, GROUND_LEN), this.curbMat);
+      curb.position.set(side * (SIDEWALK_IN - 0.1), 0.14, z);
       curb.receiveShadow = true;
       s.add(curb);
     }
 
     const grass = groundTexture();
     grass.repeat.set(20, GROUND_LEN / 6);
-    const g = new THREE.Mesh(new THREE.PlaneGeometry(120, GROUND_LEN), new THREE.MeshLambertMaterial({ map: grass }));
+    const g = new THREE.Mesh(new THREE.PlaneGeometry(140, GROUND_LEN), new THREE.MeshLambertMaterial({ map: grass }));
     g.rotation.x = -Math.PI / 2;
     g.position.set(0, -0.02, z);
     g.receiveShadow = true;
     s.add(g);
 
-    const wireMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
-    for (let l = 0; l < 3; l++) {
-      const w = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, GROUND_LEN), wireMat);
-      w.position.set(laneX(l), 6.45, z);
-      s.add(w);
-    }
     this.scrollTex = [track, edge, pave, grass];
   }
 
-  addScenery(gltf: GLTF) {
-    for (let i = 1; i <= 5; i++) {
-      const o = gltf.scene.getObjectByName('house' + i);
-      if (!o) continue;
-      const box = new THREE.Box3().setFromObject(o);
-      const size = box.getSize(new THREE.Vector3());
-      this.houses.push(new Instanced(o, 14, this.scene, { cast: true, receive: true, name: 'house' + i }));
-      this.houseSize.push({ len: size.x, depth: size.z });
-    }
+  addScenery(_gltf: GLTF) {
+    // Legacy European cottages from scenery.glb are intentionally ignored in favor of SUTO TechnoPark 3D Lab Towers & Landmarks!
   }
 
-  warmScenery(renderer: THREE.WebGLRenderer) {
-    for (const h of this.houses) for (const p of h.parts) {
-      const m = p.mesh.material as THREE.MeshLambertMaterial;
-      if (m.map) renderer.initTexture(m.map);
-    }
-  }
+  warmScenery(_renderer: THREE.WebGLRenderer) {}
 
   get hasScenery() {
-    return this.houses.length > 0;
+    return true;
   }
 
   resize(w: number, h: number) {
@@ -286,7 +366,7 @@ export class World {
         fx.burst(ev.x, ev.y + 1, -0.5, 20, 0x4ade80, { speed: 4.5, up: 1.8, size: 0.5, life: 0.45, grav: 2 });
         break;
       case 'land':
-        if (ev.fall > 0.6) fx.burst(this.player.root.position.x, this.player.root.position.y + 0.1, 0.2, 6, 0x94a3b8, { speed: 2, up: 0.6, size: 0.5, life: 0.4, grav: 1 });
+        if (ev.fall > 0.6) fx.burst(this.player.root.position.x, this.player.root.position.y + 0.1, 0.2, 6, 0x38bdf8, { speed: 2, up: 0.6, size: 0.5, life: 0.4, grav: 1 });
         break;
       case 'stumble':
       case 'hit':
@@ -304,13 +384,17 @@ export class World {
     const pd = sim.d;
     const zOf = (d: number) => -(d - pd);
 
-    // 10-Floor Zone Atmosphere transition
+    // 10-Floor Zone Atmosphere + Active Center Neon Theme Override!
     const pal = lerpZonePalette(menu ? 0 : sim.progress01);
+    const activeAccentHex = sim.activeCenter ? CENTERS[sim.activeCenter].color : pal.neonHex;
     if (this.scene.fog instanceof THREE.Fog) {
       this.scene.fog.color.set(pal.fogHex);
     }
     this.sun.color.set(pal.sunHex);
     this.hemi.color.set(pal.skyBottomHex);
+    this.curbMat.color.set(activeAccentHex);
+    this.curbMat.emissive.set(activeAccentHex).multiplyScalar(0.35);
+    this.archBeamMat.color.set(activeAccentHex);
 
     // scrolling ground
     for (const t of this.scrollTex) t.offset.y = (pd / (GROUND_LEN / t.repeat.y)) % 1;
@@ -343,6 +427,16 @@ export class World {
     const gold = new THREE.Color(1.0, 0.78, 0.25).multiplyScalar(0.6);
     for (const c of sim.coinList) {
       if (c.d > pd + VIEW_AHEAD - 20) continue;
+      // Hide coins that sit directly inside a Center Pickup capsule so the capsule icon is never occluded!
+      let overlapsPickup = false;
+      for (const cp of sim.pickups) {
+        if (cp.lane === c.lane && Math.abs(cp.d - c.d) < 1.8) {
+          overlapsPickup = true;
+          break;
+        }
+      }
+      if (overlapsPickup) continue;
+
       const z = zOf(c.d);
       m4.compose(v.set(c.x, c.y, z), q, one);
       this.coins.add(m4);
@@ -357,9 +451,9 @@ export class World {
       const z = zOf(cp.d);
       const bob = Math.sin(this.time * 3.6 + cp.d) * 0.16;
       const x = laneX(cp.lane);
-      m4.compose(v.set(x, cp.y + bob, z), camQ, sc.set(1.25, 1.25, 1.25));
+      m4.compose(v.set(x, cp.y + bob, z), camQ, sc.set(1.3, 1.3, 1.3));
       this.centerCards[cp.centerId].add(m4);
-      m4.compose(v.set(x, cp.y + bob, z + 0.06), camQ, sc.set(3.1, 3.1, 3.1));
+      m4.compose(v.set(x, cp.y + bob, z + 0.06), camQ, sc.set(3.2, 3.2, 3.2));
       this.halos.add(m4, CENTER_COLORS[cp.centerId]);
     }
     for (const meta of CENTER_LIST) this.centerCards[meta.id].end();
@@ -385,18 +479,8 @@ export class World {
     this.coins.end();
     this.halos.end();
 
-    // poles
-    this.poles.begin();
-    const first = Math.floor((pd - 10) / 16) * 16;
-    for (let d = first; d < pd + VIEW_AHEAD; d += 16) {
-      m4.makeTranslation(SIDEWALK_IN + 0.3, 0.25, zOf(d));
-      this.poles.add(m4);
-      m4.makeRotationY(Math.PI).setPosition(-SIDEWALK_IN - 0.3, 0.25, zOf(d + 8));
-      this.poles.add(m4);
-    }
-    this.poles.end();
-
-    this.syncHouses(pd, zOf);
+    // TechnoPark Scenery: Cyber Arches, Glass Lab Towers, Zone Landmarks & 9-Center Holographic Billboards!
+    this.syncTechnoScenery(sim, pd, zOf, activeAccentHex);
     this.syncGhostPack(dt, menu, ghosts, localPlayerId, tvMode);
 
     this.player.root.visible = !tvMode || menu;
@@ -414,6 +498,60 @@ export class World {
     }
   }
 
+  private syncTechnoScenery(sim: Sim, pd: number, zOf: (d: number) => number, activeAccentHex: string) {
+    // 1. High-span Cyber Arches every 24m
+    this.arches.begin();
+    const firstArch = Math.floor((pd - 12) / 24) * 24;
+    for (let d = firstArch; d < pd + VIEW_AHEAD; d += 24) {
+      m4.makeTranslation(0, 0, zOf(d));
+      this.arches.add(m4);
+    }
+    this.arches.end();
+
+    // 2. TechnoPark Glass Lab Towers along both sides (every 18m, placed at X = ±TOWER_X so camera never clips)
+    this.labTowers.begin();
+    const towerTint = new THREE.Color(activeAccentHex).lerp(new THREE.Color(0xffffff), 0.55);
+    const firstTower = Math.floor((pd - 20) / 18) * 18;
+    for (let d = firstTower; d < pd + VIEW_AHEAD; d += 18) {
+      for (const side of [-1, 1]) {
+        const hScale = 0.8 + ((Math.abs(Math.floor(d / 18)) + (side > 0 ? 2 : 0)) % 3) * 0.25;
+        m4.compose(v.set(side * TOWER_X, 0, zOf(d)), q.identity(), sc.set(1, hScale, 1));
+        this.labTowers.add(m4, towerTint);
+      }
+    }
+    this.labTowers.end();
+
+    // 3. Zone-Specific 3D Landmarks on the sidewalk (every 24m, matching current Zone 1..4)
+    for (const zId of [1, 2, 3, 4] as ZoneId[]) this.zoneLandmarks[zId].begin();
+    const activeZone = sim.zoneId || 1;
+    const lmPool = this.zoneLandmarks[activeZone];
+    for (let d = firstArch + 12; d < pd + VIEW_AHEAD; d += 24) {
+      for (const side of [-1, 1]) {
+        q.setFromEuler(e.set(0, side > 0 ? -Math.PI / 2 : Math.PI / 2, 0));
+        m4.compose(v.set(side * (SIDEWALK_IN + 1.8), 0.25, zOf(d)), q, one);
+        lmPool.add(m4);
+      }
+    }
+    for (const zId of [1, 2, 3, 4] as ZoneId[]) this.zoneLandmarks[zId].end();
+
+    // 4. Holographic 9-Center Billboards angled toward the runner every 36m!
+    for (const meta of CENTER_LIST) this.centerBillboards[meta.id].begin();
+    const firstBB = Math.floor((pd - 18) / 36) * 36;
+    let slotIdx = Math.max(0, Math.floor(firstBB / 36));
+    for (let d = firstBB; d < pd + VIEW_AHEAD - 10; d += 36) {
+      const side = slotIdx % 2 === 0 ? -1 : 1;
+      // If a Center power-up is currently active, feature that Center on the billboards; otherwise cycle through zone centers!
+      const centerId: CenterId = sim.activeCenter
+        ? sim.activeCenter
+        : (((slotIdx % 9) + 1) as CenterId);
+      q.setFromEuler(e.set(0, side * -0.38, 0));
+      m4.compose(v.set(side * (SIDEWALK_OUT - 0.4), 0.8, zOf(d)), q, one);
+      this.centerBillboards[centerId].add(m4);
+      slotIdx++;
+    }
+    for (const meta of CENTER_LIST) this.centerBillboards[meta.id].end();
+  }
+
   private syncGhostPack(dt: number, menu: boolean, ghosts: RunnerNetState[], localPlayerId: string, tvMode: boolean) {
     const others = menu
       ? []
@@ -429,7 +567,6 @@ export class World {
       slot.group.visible = true;
       slot.mixer.update(dt);
 
-      // Spread runners slightly in X and Z so two runners never overlap at the exact same coordinate
       const spreadX = ((i % 3) - 1) * 0.28;
       const spreadZ = -i * 1.35;
       const targetX = (g.x ?? laneX(g.lane)) + spreadX;
@@ -455,35 +592,7 @@ export class World {
     }
   }
 
-  private syncHouses(pd: number, zOf: (d: number) => number) {
-    if (!this.houses.length) return;
-    this.placed = this.placed.filter((h) => h.d + h.len / 2 > pd - 60);
-    for (const side of [0, 1]) {
-      if (this.nextHouse[side] < pd - 60) this.nextHouse[side] = pd - 60;
-      let guard = 0;
-      while (this.nextHouse[side] < pd + VIEW_AHEAD && guard++ < 30) {
-        const used = new Array(this.houses.length).fill(0);
-        for (const h of this.placed) used[h.type]++;
-        const choices = this.houses.map((_, i) => i).filter((i) => used[i] < this.houses[i].capacity);
-        if (!choices.length) break;
-        const type = this.rng.pick(choices);
-        const { len, depth } = this.houseSize[type];
-        this.placed.push({ type, side, d: this.nextHouse[side] + len / 2, len, depth });
-        this.nextHouse[side] += len + this.rng.range(1, 5);
-      }
-    }
-    for (const h of this.houses) h.begin();
-    for (const h of this.placed) {
-      const sgn = h.side === 0 ? 1 : -1;
-      m4.makeRotationY(sgn > 0 ? -Math.PI / 2 : Math.PI / 2).setPosition(sgn * (SIDEWALK_OUT + 0.6 + h.depth / 2), 0, zOf(h.d));
-      this.houses[h.type].add(m4);
-    }
-    for (const h of this.houses) h.end();
-  }
-
   resetScenery() {
-    this.placed = [];
-    this.nextHouse = [-60, -60];
     this.player.reset();
   }
 
@@ -504,7 +613,7 @@ export class World {
     this.camY += (target - this.camY) * Math.min(1, dt * 5);
     const dist = (tvMode ? 7.2 : 5.4) + portrait * 2.4;
     const height = (tvMode ? 3.8 : 2.75) + portrait * 1.5;
-    const sx = tvMode ? sim.x * 0.35 : sim.x * 0.72;
+    const sx = tvMode ? sim.x * 0.35 : sim.x * 0.65;
     let ox = 0, oy = 0;
     if (this.shake > 0) {
       this.shake = Math.max(0, this.shake - dt);
@@ -519,7 +628,7 @@ export class World {
       cam.fov += (fov - cam.fov) * Math.min(1, dt * 3);
       cam.updateProjectionMatrix();
     }
-    cam.lookAt(tvMode ? 0 : sim.x * 0.85, this.camY + 1.25, -9);
+    cam.lookAt(tvMode ? 0 : sim.x * 0.8, this.camY + 1.25, -9);
   }
 
   takeFlash() {
@@ -533,9 +642,11 @@ export class World {
       ...Object.values(this.pools),
       this.coins,
       this.halos,
-      this.poles,
+      this.arches,
+      this.labTowers,
+      ...Object.values(this.zoneLandmarks),
       ...Object.values(this.centerCards),
-      ...this.houses,
+      ...Object.values(this.centerBillboards),
     ];
     for (const p of all) {
       p.begin();

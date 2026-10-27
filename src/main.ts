@@ -300,6 +300,7 @@ async function main() {
           rank,
           totalRunners: latestRoom.activeRunners.length || 1,
           collectedCenters: sim.collectedCenters,
+          soloRun,
         });
         ui.show('over');
         break;
@@ -398,6 +399,7 @@ async function main() {
       collectedCenters: sim.collectedCenters,
       rank: myRunner ? myRunner.rank : 1,
       totalRunners: latestRoom.activeRunners.length || 1,
+      soloRun,
     });
 
     if (draw) renderer.render(world.scene, world.camera);
@@ -418,14 +420,6 @@ async function main() {
   };
   if (!TEST) requestAnimationFrame(loop);
   else renderer.render(world.scene, world.camera);
-
-  fetchBuffer('assets/scenery.glb')
-    .then(parseGLB)
-    .then((g) => {
-      world.addScenery(g);
-      world.warmScenery(renderer);
-    })
-    .catch((e) => console.warn('scenery', e));
 }
 
 main().catch((e) => console.error(e));

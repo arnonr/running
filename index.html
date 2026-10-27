@@ -61,29 +61,33 @@ html, body {
 .hud.on { opacity: 1; }
 .hud-left {
   position: absolute; left: calc(12px + env(safe-area-inset-left)); top: calc(12px + env(safe-area-inset-top));
-  display: flex; flex-direction: column; gap: 8px; align-items: flex-start;
+  display: flex; flex-direction: column; gap: 6px; align-items: flex-start;
+  max-width: min(210px, 28vw);
 }
 .hud-btns { display: flex; gap: 8px; }
 .icon-btn {
-  width: 42px; height: 42px; border-radius: 13px; border: 1px solid var(--line);
+  width: 40px; height: 40px; border-radius: 12px; border: 1px solid var(--line);
   background: var(--panel); color: #fff; display: grid; place-items: center; cursor: pointer;
 }
-.icon-btn svg { width: 20px; height: 20px; fill: currentColor; }
+.icon-btn svg { width: 19px; height: 19px; fill: currentColor; }
 .floor-pill {
-  background: var(--panel); border: 1px solid rgba(56,189,248,.45); border-radius: 14px;
-  padding: 6px 12px; display: flex; flex-direction: column; gap: 2px;
-  box-shadow: 0 4px 14px rgba(0,0,0,.35);
+  background: var(--panel); border: 1px solid rgba(56,189,248,.45); border-radius: 13px;
+  padding: 6px 10px; display: flex; flex-direction: column; gap: 2px;
+  width: 100%; box-shadow: 0 4px 14px rgba(0,0,0,.35);
 }
-.floor-pill b { font-size: 16px; color: var(--sky); letter-spacing: .03em; }
-.floor-pill small { font-size: 11px; color: #cbd5e1; }
+.floor-pill b { font-size: 14px; color: var(--sky); letter-spacing: .03em; line-height: 1.15; white-space: nowrap; }
+.floor-pill small {
+  font-size: 11px; color: #cbd5e1; line-height: 1.25;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
 .rank-pill {
   background: rgba(34,197,94,.2); border: 1px solid rgba(34,197,94,.5); border-radius: 999px;
-  padding: 4px 11px; font-size: 12px; font-weight: 800; color: #86efac;
+  padding: 4px 10px; font-size: 11.5px; font-weight: 800; color: #86efac; white-space: nowrap;
 }
 
 .hud-center {
   position: absolute; left: 50%; top: calc(10px + env(safe-area-inset-top)); transform: translateX(-50%);
-  display: flex; flex-direction: column; align-items: center; gap: 6px; width: min(380px, 52vw);
+  display: flex; flex-direction: column; align-items: center; gap: 5px; width: min(300px, 36vw);
 }
 .timer-box {
   background: var(--panel); border: 1px solid var(--line); border-radius: 999px;

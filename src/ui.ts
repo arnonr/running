@@ -492,6 +492,7 @@ export class UI {
     collectedCenters: Set<CenterId>;
     rank: number;
     totalRunners: number;
+    soloRun?: boolean;
   }) {
     this.el.score.textContent = String(opts.score).padStart(6, '0');
     this.el.coins.textContent = String(opts.coins);
@@ -499,7 +500,9 @@ export class UI {
     this.el.mult.classList.toggle('hot', opts.mult > 1);
     this.el['hud-floor'].textContent = `FLOOR ${opts.floor} / 10`;
     this.el['hud-zone'].textContent = opts.zoneNameTh;
-    this.el['hud-rank'].textContent = `อันดับ #${opts.rank} / ${Math.max(1, opts.totalRunners)}`;
+    this.el['hud-rank'].textContent = opts.soloRun
+      ? `⚡ โหมดเดี่ยว · ${opts.collectedCenters.size}/9 ศูนย์`
+      : `อันดับ #${opts.rank} / ${Math.max(1, opts.totalRunners)}`;
     this.el['hud-timer'].textContent = this.formatMMSS(opts.timeLeft);
     this.el['hud-progress'].style.transform = `scaleX(${opts.progress01.toFixed(3)})`;
 
@@ -570,8 +573,11 @@ export class UI {
     rank: number;
     totalRunners: number;
     collectedCenters: Set<CenterId>;
+    soloRun?: boolean;
   }) {
-    this.el['r-rank-line'].textContent = `อันดับของคุณในรอบนี้: #${r.rank} จาก ${Math.max(1, r.totalRunners)} คน`;
+    this.el['r-rank-line'].textContent = r.soloRun
+      ? `โหมดวิ่งเดี่ยว · สะสมครบ ${r.collectedCenters.size} / 9 ศูนย์วิจัย`
+      : `อันดับของคุณในรอบนี้: #${r.rank} จาก ${Math.max(1, r.totalRunners)} คน`;
     this.el['r-score'].textContent = r.score.toLocaleString();
     this.el['r-coins'].textContent = String(r.coins);
     this.el['r-dist'].textContent = `${r.distance} m`;

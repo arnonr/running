@@ -376,7 +376,12 @@ export class MatchRoomCore {
 
   getSnapshot(): RoomSnapshot {
     const runners = Array.from(this.activeMap.values()).map((r) => ({ ...r }));
-    runners.sort((a, b) => b.score - a.score || b.d - a.d);
+    runners.sort(
+      (a, b) =>
+        b.score - a.score ||
+        b.d - a.d ||
+        (a.isBot ? 1 : 0) - (b.isBot ? 1 : 0),
+    );
 
     const meanD =
       runners.length > 0

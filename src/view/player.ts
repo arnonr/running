@@ -72,17 +72,35 @@ export class PlayerView {
     const mat = (hex: string, opacity = 0.85, wireframe = false) =>
       new THREE.MeshBasicMaterial({ color: hex, transparent: opacity < 1, opacity, wireframe });
 
-    // #1 Jet Fighter Pack: delta wings + twin thruster cones on back
+    // #1 Jet Fighter Pack: sleek swept-back delta wings + central jet fuselage + twin tail fins + glowing afterburners
     const g1 = new THREE.Group();
-    const wingGeo = new THREE.BoxGeometry(2.2, 0.06, 0.55);
-    const wing = new THREE.Mesh(wingGeo, mat('#38bdf8', 0.9));
-    wing.position.set(0, 1.15, 0.25);
-    const jetL = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.6, 8), mat('#f97316', 0.9));
-    jetL.rotation.x = Math.PI / 2;
-    jetL.position.set(-0.35, 1.05, 0.55);
-    const jetR = jetL.clone();
-    jetR.position.x = 0.35;
-    g1.add(wing, jetL, jetR);
+    const wingShape = new THREE.Shape();
+    wingShape.moveTo(0, 0.45);
+    wingShape.lineTo(1.25, -0.25);
+    wingShape.lineTo(1.15, -0.45);
+    wingShape.lineTo(0, -0.1);
+    wingShape.lineTo(-1.15, -0.45);
+    wingShape.lineTo(-1.25, -0.25);
+    wingShape.closePath();
+    const wingGeo = new THREE.ExtrudeGeometry(wingShape, { depth: 0.06, bevelEnabled: false });
+    wingGeo.rotateX(Math.PI / 2);
+    const wing = new THREE.Mesh(wingGeo, mat('#38bdf8', 0.92));
+    wing.position.set(0, 1.2, 0.22);
+
+    const podGeo = new THREE.CylinderGeometry(0.11, 0.14, 0.75, 10);
+    podGeo.rotateX(Math.PI / 2);
+    for (const s of [-1, 1]) {
+      const pod = new THREE.Mesh(podGeo, mat('#0ea5e9', 0.95));
+      pod.position.set(s * 0.34, 1.15, 0.25);
+      const fin = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.38, 0.32), mat('#e0f2fe', 0.95));
+      fin.position.set(s * 0.34, 1.38, 0.38);
+      fin.rotation.z = -s * 0.22;
+      const flame = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.55, 10), mat('#f97316', 0.92));
+      flame.rotation.x = Math.PI / 2;
+      flame.position.set(s * 0.34, 1.15, 0.78);
+      g1.add(pod, fin, flame);
+    }
+    g1.add(wing);
 
     // #2 Robo-Wingman Drones: two hovering companion drones Left & Right
     const g2 = new THREE.Group();
