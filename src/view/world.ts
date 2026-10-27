@@ -43,6 +43,13 @@ const GROUND_LEN = 300;
 const SIDEWALK_IN = 4.2;
 const SIDEWALK_OUT = 8.2;
 
+export const SCENERY_POOL_LIMITS = {
+  staticPerCenter: 42,
+  kineticPerCenter: 28,
+  overheadPerCenter: 18,
+  billboardsPerCenter: 8,
+} as const;
+
 interface GhostSlot {
   group: THREE.Group;
   mixer: THREE.AnimationMixer;
@@ -299,14 +306,14 @@ export class World {
       windsock.rotation.z = Math.PI / 2;
       windsock.position.set(2.25, 2.6, 0);
       stat.add(towerBase, towerShaft, cabGlass, cabRoof, windsockPole, windsock);
-      this.centerStatic[1] = new Instanced(stat, 24, scene, { name: 'c1-stat' });
+      this.centerStatic[1] = new Instanced(stat, SCENERY_POOL_LIMITS.staticPerCenter, scene, { name: 'c1-stat' });
 
       const kin = new THREE.Group();
       const radarBar = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.18, 0.28), new THREE.MeshBasicMaterial({ color: 0xfacc15 }));
       const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.26, 8, 8), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
       beacon.position.y = 0.25;
       kin.add(radarBar, beacon);
-      this.centerKinetic[1] = new Instanced(kin, 24, scene, { name: 'c1-kin' });
+      this.centerKinetic[1] = new Instanced(kin, SCENERY_POOL_LIMITS.kineticPerCenter, scene, { name: 'c1-kin' });
 
       const over = new THREE.Group();
       const fuselage = new THREE.Mesh(new THREE.ConeGeometry(0.32, 2.8, 8), whiteMat);
@@ -319,7 +326,7 @@ export class World {
       burner.rotation.x = Math.PI / 2;
       burner.position.z = 1.65;
       over.add(fuselage, wings, tail, burner);
-      this.centerOverhead[1] = new Instanced(over, 16, scene, { name: 'c1-over' });
+      this.centerOverhead[1] = new Instanced(over, SCENERY_POOL_LIMITS.overheadPerCenter, scene, { name: 'c1-over' });
     }
 
     // ========================================================================
@@ -338,7 +345,7 @@ export class World {
       const ecoTree = new THREE.Mesh(new THREE.DodecahedronGeometry(1.15, 1), new THREE.MeshLambertMaterial({ color: 0x22c55e }));
       ecoTree.position.set(-1.9, 1.3, 0);
       stat.add(mast, solarPanel, solarFrame, ecoTree);
-      this.centerStatic[4] = new Instanced(stat, 24, scene, { name: 'c4-stat' });
+      this.centerStatic[4] = new Instanced(stat, SCENERY_POOL_LIMITS.staticPerCenter, scene, { name: 'c4-stat' });
 
       const kin = new THREE.Group();
       const hub = new THREE.Mesh(new THREE.SphereGeometry(0.38, 10, 10), new THREE.MeshBasicMaterial({ color: 0x4ade80 }));
@@ -352,7 +359,7 @@ export class World {
         tip.translateY(2.85);
         kin.add(blade, tip);
       }
-      this.centerKinetic[4] = new Instanced(kin, 24, scene, { name: 'c4-kin' });
+      this.centerKinetic[4] = new Instanced(kin, SCENERY_POOL_LIMITS.kineticPerCenter, scene, { name: 'c4-kin' });
 
       const over = new THREE.Group();
       const c1 = new THREE.Mesh(new THREE.SphereGeometry(1.2, 10, 10), whiteMat);
@@ -361,7 +368,7 @@ export class World {
       const c3 = new THREE.Mesh(new THREE.SphereGeometry(0.85, 10, 10), whiteMat);
       c3.position.set(-1.0, -0.2, 0);
       over.add(c1, c2, c3);
-      this.centerOverhead[4] = new Instanced(over, 16, scene, { name: 'c4-over' });
+      this.centerOverhead[4] = new Instanced(over, SCENERY_POOL_LIMITS.overheadPerCenter, scene, { name: 'c4-over' });
     }
 
     // ========================================================================
@@ -382,7 +389,7 @@ export class World {
       const serverGlow = new THREE.Mesh(new THREE.BoxGeometry(1.46, 0.25, 1.46), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
       serverGlow.position.set(2.0, 3.1, 0);
       stat.add(spire, serverBox, serverGlow);
-      this.centerStatic[5] = new Instanced(stat, 24, scene, { name: 'c5-stat' });
+      this.centerStatic[5] = new Instanced(stat, SCENERY_POOL_LIMITS.staticPerCenter, scene, { name: 'c5-stat' });
 
       const kin = new THREE.Group();
       const wave1 = new THREE.Mesh(new THREE.TorusGeometry(1.2, 0.07, 8, 24), new THREE.MeshBasicMaterial({ color: 0xc084fc }));
@@ -390,12 +397,12 @@ export class World {
       wave2.rotation.y = Math.PI / 2;
       const coreNode = new THREE.Mesh(new THREE.OctahedronGeometry(0.48, 0), new THREE.MeshBasicMaterial({ color: 0xf0abfc }));
       kin.add(wave1, wave2, coreNode);
-      this.centerKinetic[5] = new Instanced(kin, 24, scene, { name: 'c5-kin' });
+      this.centerKinetic[5] = new Instanced(kin, SCENERY_POOL_LIMITS.kineticPerCenter, scene, { name: 'c5-kin' });
 
       const over = new THREE.Group();
       const dataCube = new THREE.Mesh(new THREE.OctahedronGeometry(0.95, 0), new THREE.MeshBasicMaterial({ color: 0xc084fc, wireframe: true }));
       over.add(dataCube);
-      this.centerOverhead[5] = new Instanced(over, 16, scene, { name: 'c5-over' });
+      this.centerOverhead[5] = new Instanced(over, SCENERY_POOL_LIMITS.overheadPerCenter, scene, { name: 'c5-over' });
     }
 
     // ========================================================================
@@ -411,14 +418,14 @@ export class World {
       canopy.position.set(-0.6, 5.5, 0);
       canopy.rotation.z = 0.22;
       stat.add(pylon, goldTrim, canopy);
-      this.centerStatic[3] = new Instanced(stat, 24, scene, { name: 'c3-stat' });
+      this.centerStatic[3] = new Instanced(stat, SCENERY_POOL_LIMITS.staticPerCenter, scene, { name: 'c3-stat' });
 
       const kin = new THREE.Group();
       const gyro1 = new THREE.Mesh(new THREE.TorusGeometry(0.95, 0.09, 8, 20), new THREE.MeshBasicMaterial({ color: 0xfacc15 }));
       const gyro2 = new THREE.Mesh(new THREE.TorusGeometry(0.65, 0.08, 8, 20), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
       gyro2.rotation.x = Math.PI / 2;
       kin.add(gyro1, gyro2);
-      this.centerKinetic[3] = new Instanced(kin, 24, scene, { name: 'c3-kin' });
+      this.centerKinetic[3] = new Instanced(kin, SCENERY_POOL_LIMITS.kineticPerCenter, scene, { name: 'c3-kin' });
 
       const over = new THREE.Group();
       const archRing = new THREE.Mesh(
@@ -426,7 +433,7 @@ export class World {
         new THREE.MeshBasicMaterial({ color: 0xfacc15 }),
       );
       over.add(archRing);
-      this.centerOverhead[3] = new Instanced(over, 16, scene, { name: 'c3-over' });
+      this.centerOverhead[3] = new Instanced(over, SCENERY_POOL_LIMITS.overheadPerCenter, scene, { name: 'c3-over' });
     }
 
     // ========================================================================
@@ -442,7 +449,7 @@ export class World {
       lowerBoom.position.set(0, 3.5, 0);
       lowerBoom.rotation.z = 0.18;
       stat.add(ped, shoulder, lowerBoom);
-      this.centerStatic[2] = new Instanced(stat, 24, scene, { name: 'c2-stat' });
+      this.centerStatic[2] = new Instanced(stat, SCENERY_POOL_LIMITS.staticPerCenter, scene, { name: 'c2-stat' });
 
       const kin = new THREE.Group();
       const joint = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.7, 10), new THREE.MeshBasicMaterial({ color: 0xfacc15 }));
@@ -453,14 +460,14 @@ export class World {
       const claw = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.1, 8, 16, Math.PI * 1.4), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
       claw.position.set(-1.35, 2.2, 0);
       kin.add(joint, forearm, claw);
-      this.centerKinetic[2] = new Instanced(kin, 24, scene, { name: 'c2-kin' });
+      this.centerKinetic[2] = new Instanced(kin, SCENERY_POOL_LIMITS.kineticPerCenter, scene, { name: 'c2-kin' });
 
       const over = new THREE.Group();
       const beam = new THREE.Mesh(new THREE.BoxGeometry(9.6, 0.35, 0.45), slateMat);
       const laser = new THREE.Mesh(new THREE.BoxGeometry(9.2, 0.12, 0.16), new THREE.MeshBasicMaterial({ color: 0xfb923c }));
       laser.position.y = -0.24;
       over.add(beam, laser);
-      this.centerOverhead[2] = new Instanced(over, 16, scene, { name: 'c2-over' });
+      this.centerOverhead[2] = new Instanced(over, SCENERY_POOL_LIMITS.overheadPerCenter, scene, { name: 'c2-over' });
     }
 
     // ========================================================================
@@ -473,7 +480,7 @@ export class World {
       const radome = new THREE.Mesh(new THREE.IcosahedronGeometry(1.45, 1), new THREE.MeshBasicMaterial({ color: 0x2dd4bf, wireframe: true }));
       radome.position.set(2.1, 1.6, 0);
       stat.add(tower, radome);
-      this.centerStatic[6] = new Instanced(stat, 24, scene, { name: 'c6-stat' });
+      this.centerStatic[6] = new Instanced(stat, SCENERY_POOL_LIMITS.staticPerCenter, scene, { name: 'c6-stat' });
 
       const kin = new THREE.Group();
       const dish = new THREE.Mesh(new THREE.ConeGeometry(1.45, 0.75, 16, 1, true), whiteMat);
@@ -484,7 +491,7 @@ export class World {
       const scanRing = new THREE.Mesh(new THREE.TorusGeometry(1.5, 0.06, 8, 24), new THREE.MeshBasicMaterial({ color: 0x2dd4bf }));
       scanRing.rotation.x = Math.PI / 2;
       kin.add(dish, feedHorn, scanRing);
-      this.centerKinetic[6] = new Instanced(kin, 24, scene, { name: 'c6-kin' });
+      this.centerKinetic[6] = new Instanced(kin, SCENERY_POOL_LIMITS.kineticPerCenter, scene, { name: 'c6-kin' });
 
       const over = new THREE.Group();
       const cl1 = new THREE.Mesh(new THREE.SphereGeometry(1.3, 10, 10), whiteMat);
@@ -493,7 +500,7 @@ export class World {
       const rainStreak = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.8, 6), new THREE.MeshBasicMaterial({ color: 0x2dd4bf }));
       rainStreak.position.set(0.4, -1.6, 0);
       over.add(cl1, cl2, rainStreak);
-      this.centerOverhead[6] = new Instanced(over, 16, scene, { name: 'c6-over' });
+      this.centerOverhead[6] = new Instanced(over, SCENERY_POOL_LIMITS.overheadPerCenter, scene, { name: 'c6-over' });
     }
 
     // ========================================================================
@@ -508,7 +515,7 @@ export class World {
       const glassCore = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 6.0, 12), new THREE.MeshBasicMaterial({ color: 0x4ade80 }));
       glassCore.position.set(2.0, 3.0, 0);
       stat.add(base, cap, glassCore);
-      this.centerStatic[7] = new Instanced(stat, 24, scene, { name: 'c7-stat' });
+      this.centerStatic[7] = new Instanced(stat, SCENERY_POOL_LIMITS.staticPerCenter, scene, { name: 'c7-stat' });
 
       const kin = new THREE.Group();
       for (let i = 0; i < 8; i++) {
@@ -525,12 +532,12 @@ export class World {
         rung.rotation.y = -ang;
         kin.add(n1, n2, rung);
       }
-      this.centerKinetic[7] = new Instanced(kin, 24, scene, { name: 'c7-kin' });
+      this.centerKinetic[7] = new Instanced(kin, SCENERY_POOL_LIMITS.kineticPerCenter, scene, { name: 'c7-kin' });
 
       const over = new THREE.Group();
       const hexRing = new THREE.Mesh(new THREE.TorusGeometry(1.1, 0.1, 6, 6), new THREE.MeshBasicMaterial({ color: 0xa3e635 }));
       over.add(hexRing);
-      this.centerOverhead[7] = new Instanced(over, 16, scene, { name: 'c7-over' });
+      this.centerOverhead[7] = new Instanced(over, SCENERY_POOL_LIMITS.overheadPerCenter, scene, { name: 'c7-over' });
     }
 
     // ========================================================================
@@ -546,14 +553,14 @@ export class World {
       const ecgPillar = new THREE.Mesh(new THREE.BoxGeometry(0.35, 5.2, 0.35), new THREE.MeshBasicMaterial({ color: 0xfb7185 }));
       ecgPillar.position.set(2.0, 2.6, 0);
       stat.add(col, trim, ecgPillar);
-      this.centerStatic[8] = new Instanced(stat, 24, scene, { name: 'c8-stat' });
+      this.centerStatic[8] = new Instanced(stat, SCENERY_POOL_LIMITS.staticPerCenter, scene, { name: 'c8-stat' });
 
       const kin = new THREE.Group();
       const crossV = new THREE.Mesh(new THREE.BoxGeometry(0.55, 1.85, 0.45), new THREE.MeshBasicMaterial({ color: 0xfb7185 }));
       const crossH = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.55, 0.45), new THREE.MeshBasicMaterial({ color: 0xfb7185 }));
       const haloRing = new THREE.Mesh(new THREE.TorusGeometry(1.35, 0.08, 8, 24), whiteMat);
       kin.add(crossV, crossH, haloRing);
-      this.centerKinetic[8] = new Instanced(kin, 24, scene, { name: 'c8-kin' });
+      this.centerKinetic[8] = new Instanced(kin, SCENERY_POOL_LIMITS.kineticPerCenter, scene, { name: 'c8-kin' });
 
       const over = new THREE.Group();
       const arch = new THREE.Mesh(
@@ -561,7 +568,7 @@ export class World {
         new THREE.MeshBasicMaterial({ color: 0xfecdd3 }),
       );
       over.add(arch);
-      this.centerOverhead[8] = new Instanced(over, 16, scene, { name: 'c8-over' });
+      this.centerOverhead[8] = new Instanced(over, SCENERY_POOL_LIMITS.overheadPerCenter, scene, { name: 'c8-over' });
     }
 
     // ========================================================================
@@ -585,7 +592,7 @@ export class World {
       const launchGantry = new THREE.Mesh(new THREE.BoxGeometry(0.55, 7.8, 0.55), new THREE.MeshBasicMaterial({ color: 0x38bdf8, wireframe: true }));
       launchGantry.position.set(1.65, 3.9, 0);
       stat.add(pad, body, nose, launchGantry);
-      this.centerStatic[9] = new Instanced(stat, 24, scene, { name: 'c9-stat' });
+      this.centerStatic[9] = new Instanced(stat, SCENERY_POOL_LIMITS.staticPerCenter, scene, { name: 'c9-stat' });
 
       const kin = new THREE.Group();
       const orbitRing = new THREE.Mesh(new THREE.TorusGeometry(1.75, 0.06, 8, 28), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
@@ -595,14 +602,14 @@ export class World {
       const satPanels = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.06, 0.38), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
       satPanels.position.set(1.75, 0, 0);
       kin.add(orbitRing, satBody, satPanels);
-      this.centerKinetic[9] = new Instanced(kin, 24, scene, { name: 'c9-kin' });
+      this.centerKinetic[9] = new Instanced(kin, SCENERY_POOL_LIMITS.kineticPerCenter, scene, { name: 'c9-kin' });
 
       const over = new THREE.Group();
       const ringStation = new THREE.Mesh(new THREE.TorusGeometry(1.8, 0.14, 10, 24), new THREE.MeshBasicMaterial({ color: 0xf472b6 }));
       ringStation.rotation.x = Math.PI / 3;
       const coreHub = new THREE.Mesh(new THREE.SphereGeometry(0.5, 10, 10), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
       over.add(ringStation, coreHub);
-      this.centerOverhead[9] = new Instanced(over, 16, scene, { name: 'c9-over' });
+      this.centerOverhead[9] = new Instanced(over, SCENERY_POOL_LIMITS.overheadPerCenter, scene, { name: 'c9-over' });
     }
   }
 
@@ -615,7 +622,7 @@ export class World {
       );
       plane.position.y = 3.6;
       plane.name = 'billboard-' + meta.id;
-      this.centerBillboards[meta.id] = new Instanced(plane, 6, scene, { name: 'bb-' + meta.id });
+      this.centerBillboards[meta.id] = new Instanced(plane, SCENERY_POOL_LIMITS.billboardsPerCenter, scene, { name: 'bb-' + meta.id });
     }
   }
 

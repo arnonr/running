@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { ZONE_PALETTES, lerpZonePalette, CENTER_BIOMES, lerpCenterBiome } from '../src/view/textures';
-import { STAGE_CENTER_ORDER } from '../src/config';
+import { SCENERY_POOL_LIMITS } from '../src/view/world';
+import { STAGE_CENTER_ORDER, VIEW_AHEAD } from '../src/config';
 
 describe('10-Floor Zone & 9-Center Open-Horizon Biome Palettes', () => {
   it('defines distinct sky, fog, and neon accent colors for all 4 floor zones and interpolates smoothly', () => {
@@ -39,5 +40,16 @@ describe('10-Floor Zone & 9-Center Open-Horizon Biome Palettes', () => {
       const pal = lerpCenterBiome((i + 0.3) / 9);
       expect(pal.centerId).toBe(STAGE_CENTER_ORDER[i]);
     }
+  });
+
+  it('allocates sufficient InstancedMesh pool capacities for all 18m/36m slots across VIEW_AHEAD so kinetic parts never detach', () => {
+    const maxSlots18m = Math.ceil((VIEW_AHEAD + 16) / 18) + 1;
+    const minStaticNeeded = maxSlots18m * 2 + Math.ceil(maxSlots18m / 2) * 2;
+    const minKineticNeeded = maxSlots18m * 2;
+    const minBillboardsNeeded = Math.ceil((VIEW_AHEAD + 18) / 36) + 1;
+
+    expect(SCENERY_POOL_LIMITS.staticPerCenter).toBeGreaterThanOrEqual(minStaticNeeded);
+    expect(SCENERY_POOL_LIMITS.kineticPerCenter).toBeGreaterThanOrEqual(minKineticNeeded);
+    expect(SCENERY_POOL_LIMITS.billboardsPerCenter).toBeGreaterThanOrEqual(minBillboardsNeeded);
   });
 });

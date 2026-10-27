@@ -109,7 +109,7 @@ export function stageGateDistances(
   return STAGE_CENTER_ORDER.map((centerId, stageIndex) => ({
     stageIndex,
     centerId,
-    d: stageIndex === 0 ? 28 : Math.round(distanceAtTime((stageIndex / 9) * dur, dur)),
+    d: stageIndex === 0 ? 28 : Math.round(distanceAtTime((stageIndex / 9) * dur, dur) * 0.86),
   }));
 }
 

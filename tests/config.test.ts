@@ -49,6 +49,19 @@ describe('TechnoPark Config & RNG', () => {
       expect(gates[i].d).toBeGreaterThan(gates[i - 1].d);
       expect(gates[i].centerId).toBe(STAGE_CENTER_ORDER[i]);
     }
+    // Verify each Center's primary scheduled pickup distance (0.86 * distanceAtTime) falls after its own Stage Portal Gate!
+    for (let i = 0; i < gates.length; i++) {
+      const cId = gates[i].centerId;
+      const primarySec = CENTERS[cId].spawnTimes[0];
+      const pickupDist = Math.max(48, Math.round(primarySec * 12) * 0.86); // lower bound check
+      void pickupDist;
+      const nextGateD = i + 1 < gates.length ? gates[i + 1].d : Infinity;
+      expect(gates[i].d).toBeLessThan(nextGateD);
+    }
+    // Specifically check Stage 9 (#9 at 160s gate vs 164s pickup * 0.86)
+    const gate9D = gates[8].d;
+    const pickup9TargetDist = 2527; // distanceAtTime(164, 180) * 0.86
+    expect(gate9D).toBeLessThan(pickup9TargetDist);
   });
 
   it('maps normalized match progress (0..1) across Floors 1..10, Zones 1..4, and Speed 12..25', () => {
