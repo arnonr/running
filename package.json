@@ -12,11 +12,13 @@
     "server": "tsx server/index.ts"
   },
   "dependencies": {
+    "qrcode": "^1.5.4",
     "three": "^0.155.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/node": "^18.19.3",
+    "@types/qrcode": "^1.5.6",
     "@types/three": "^0.155.0",
     "@types/ws": "^8.5.12",
     "tsx": "^4.7.0",

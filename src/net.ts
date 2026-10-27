@@ -497,6 +497,9 @@ export class NetClient {
       };
       ws.onclose = () => {
         this.wsConnected = false;
+        setTimeout(() => {
+          if (!this.wsConnected) this.connectWebSocket();
+        }, 2500);
       };
       ws.onerror = () => {
         this.wsConnected = false;

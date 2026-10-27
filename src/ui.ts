@@ -10,6 +10,7 @@ import {
 import {
   AVATARS, AVATAR_LIST, sanitizeAvatarId, type AvatarId,
 } from './view/avatars';
+import { buildJoinQrSvg, resolveMobileJoinUrl } from './qr';
 
 export type Screen = 'start' | 'countdown' | 'play' | 'pause' | 'over';
 
@@ -272,10 +273,10 @@ export class UI {
         <div class="tv-main">
           <div class="tv-left-col">
             <div class="tv-qr-card">
-              <div class="tv-qr-svg">${this.buildQrSvg()}</div>
+              <div class="tv-qr-svg" id="tv-qr-svg">${this.buildQrSvg()}</div>
               <div class="tv-qr-info">
                 <h4>📱 สแกน QR เข้าร่วมวิ่ง!</h4>
-                <p id="tv-join-url">เปิดมือถือสแกนเพื่อลงสนามพร้อมกัน หรือรอรอบถัดไปอัตโนมัติ</p>
+                <p id="tv-join-url">สแกนด้วยกล้องมือถือ (Wi-Fi เดียวกัน): <b style="color:#38bdf8;word-break:break-all">${resolveMobileJoinUrl()}</b></p>
               </div>
             </div>
 
@@ -385,11 +386,7 @@ export class UI {
   }
 
   private buildQrSvg(): string {
-    // Stylized high-contrast QR matrix SVG for booth display
-    return `<svg viewBox="0 0 21 21" width="100%" height="100%" shape-rendering="crispEdges">
-      <rect width="21" height="21" fill="#fff"/>
-      <path d="M1,1h7v7h-7z M2,2v5h5v-5z M3,3h3v3h-3z M13,1h7v7h-7z M14,2v5h5v-5z M15,3h3v3h-3z M1,13h7v7h-7z M2,14v5h5v-5z M3,15h3v3h-3z M9,2h2v2h-2z M9,6h3v2h-3z M2,9h3v2h-3z M7,9h4v3h-4z M13,9h2v4h-2z M17,9h3v2h-3z M9,14h3v2h-3z M14,14h3v3h-3z M18,15h2v4h-2z M11,18h4v2h-4z" fill="#0f172a"/>
-    </svg>`;
+    return buildJoinQrSvg(resolveMobileJoinUrl());
   }
 
   setTvMode(tv: boolean) {
