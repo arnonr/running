@@ -55,5 +55,6 @@ export type SimEvent =
   | { type: 'centerPower'; centerId: CenterId; x: number; y: number; firstTime: boolean }
   | { type: 'centerPowerEnd'; centerId: CenterId }
   | { type: 'floorChange'; floor: number; zoneId: ZoneId }
+  | { type: 'centerStageChange'; centerId: CenterId; stageIndex: number; floor: number }
   | { type: 'finish'; score: number; coins: number; distance: number }
   | { type: 'hint'; hint: Hint };

@@ -46,13 +46,27 @@ export const speedAt = (d: number) =>
   SPEED.start + (SPEED.max - SPEED.start) * (1 - Math.exp(-Math.max(0, d) / SPEED.ramp));
 export const levelAt = (d: number) => Math.min(1, Math.max(0, d) / 3200);
 
+export const STAGE_CENTER_ORDER: readonly CenterId[] = [1, 4, 5, 3, 2, 6, 7, 8, 9];
+
+export function stageIndexAtProgress(progress01: number): number {
+  const safe = Number.isFinite(progress01) ? progress01 : 0;
+  const p = Math.max(0, Math.min(0.999999, safe));
+  return Math.min(8, Math.floor(p * 9));
+}
+
+export function stageCenterAtProgress(progress01: number): CenterId {
+  return STAGE_CENTER_ORDER[stageIndexAtProgress(progress01)];
+}
+
 export function speedAtProgress(progress01: number): number {
-  const p = Math.max(0, Math.min(1, progress01));
+  const safe = Number.isFinite(progress01) ? progress01 : 0;
+  const p = Math.max(0, Math.min(1, safe));
   return SPEED.start + (SPEED.max - SPEED.start) * p;
 }
 
 export function zoneAtProgress(progress01: number): ZoneId {
-  const p = Math.max(0, Math.min(1, progress01));
+  const safe = Number.isFinite(progress01) ? progress01 : 0;
+  const p = Math.max(0, Math.min(1, safe));
   if (p < 1 / 3) return 1; // 0:00 - 1:00 (Floor 1)
   if (p < 5 / 9) return 2; // 1:00 - 1:40 (Floors 2 - 6)
   if (p < 7 / 9) return 3; // 1:40 - 2:20 (Floor 8)
@@ -60,7 +74,8 @@ export function zoneAtProgress(progress01: number): ZoneId {
 }
 
 export function floorAtProgress(progress01: number): number {
-  const p = Math.max(0, Math.min(1, progress01));
+  const safe = Number.isFinite(progress01) ? progress01 : 0;
+  const p = Math.max(0, Math.min(1, safe));
   if (p < 1 / 3) return 1; // 0 - 60s -> Floor 1
   if (p < 5 / 9) {
     // 60 - 100s -> Floors 2..6 (and 7 transition)
@@ -85,6 +100,17 @@ export function distanceAtTime(sec: number, totalDuration = DEFAULT_MATCH_DURATI
   const p = totalDuration > 0 ? t / totalDuration : 0;
   const vEnd = speedAtProgress(p);
   return 0.5 * (SPEED.start + vEnd) * t;
+}
+
+export function stageGateDistances(
+  matchDuration = DEFAULT_MATCH_DURATION,
+): Array<{ stageIndex: number; centerId: CenterId; d: number }> {
+  const dur = Math.max(10, Number.isFinite(matchDuration) ? matchDuration : DEFAULT_MATCH_DURATION);
+  return STAGE_CENTER_ORDER.map((centerId, stageIndex) => ({
+    stageIndex,
+    centerId,
+    d: stageIndex === 0 ? 28 : Math.round(distanceAtTime((stageIndex / 9) * dur, dur)),
+  }));
 }
 
 export const OB = {
@@ -133,7 +159,7 @@ export const CENTERS: Record<CenterId, CenterMeta> = {
     color: '#38bdf8',
     icon: '✈️',
     zoneId: 1,
-    spawnTimes: [9, 39],
+    spawnTimes: [6, 95],
   },
   2: {
     id: 2,
@@ -146,7 +172,7 @@ export const CENTERS: Record<CenterId, CenterMeta> = {
     color: '#fb923c',
     icon: '🤖',
     zoneId: 2,
-    spawnTimes: [68, 86],
+    spawnTimes: [85, 34],
   },
   3: {
     id: 3,
@@ -159,7 +185,7 @@ export const CENTERS: Record<CenterId, CenterMeta> = {
     color: '#facc15',
     icon: '🚄',
     zoneId: 1,
-    spawnTimes: [16, 45],
+    spawnTimes: [65, 150],
   },
   4: {
     id: 4,
@@ -172,7 +198,7 @@ export const CENTERS: Record<CenterId, CenterMeta> = {
     color: '#4ade80',
     icon: '🌿',
     zoneId: 1,
-    spawnTimes: [24, 51],
+    spawnTimes: [25, 115],
   },
   5: {
     id: 5,
@@ -185,7 +211,7 @@ export const CENTERS: Record<CenterId, CenterMeta> = {
     color: '#c084fc',
     icon: '📡',
     zoneId: 1,
-    spawnTimes: [31, 56],
+    spawnTimes: [45, 135],
   },
   6: {
     id: 6,
@@ -198,7 +224,7 @@ export const CENTERS: Record<CenterId, CenterMeta> = {
     color: '#2dd4bf',
     icon: '🛰️',
     zoneId: 3,
-    spawnTimes: [106, 124],
+    spawnTimes: [105, 54],
   },
   7: {
     id: 7,
@@ -211,7 +237,7 @@ export const CENTERS: Record<CenterId, CenterMeta> = {
     color: '#a3e635',
     icon: '🧬',
     zoneId: 3,
-    spawnTimes: [115, 133],
+    spawnTimes: [125, 74],
   },
   8: {
     id: 8,
@@ -224,7 +250,7 @@ export const CENTERS: Record<CenterId, CenterMeta> = {
     color: '#fb7185',
     icon: '➕',
     zoneId: 4,
-    spawnTimes: [146, 162],
+    spawnTimes: [145, 15],
   },
   9: {
     id: 9,
@@ -237,7 +263,7 @@ export const CENTERS: Record<CenterId, CenterMeta> = {
     color: '#f472b6',
     icon: '🚀',
     zoneId: 4,
-    spawnTimes: [154, 170],
+    spawnTimes: [164, 173],
   },
 };
 

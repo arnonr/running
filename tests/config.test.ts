@@ -1,25 +1,54 @@
 import { describe, it, expect } from 'vitest';
 import {
   CENTERS, CENTER_LIST, DEFAULT_MATCH_DURATION, POWER_DURATION,
+  STAGE_CENTER_ORDER, stageIndexAtProgress, stageCenterAtProgress, stageGateDistances,
   floorAtProgress, zoneAtProgress, baseMultForFloor, speedAtProgress,
 } from '../src/config';
 import { Rng } from '../src/sim/rng';
 
 describe('TechnoPark Config & RNG', () => {
-  it('defines all 9 TechnoPark centers with 2 scheduled spawn times within 180s', () => {
+  it('defines all 9 TechnoPark centers with 2 scheduled spawn times within 180s and aligns primary spawn to its 20s stage', () => {
     expect(CENTER_LIST).toHaveLength(9);
-    for (let id = 1; id <= 9; id++) {
-      const c = CENTERS[id as keyof typeof CENTERS];
+    expect(STAGE_CENTER_ORDER).toEqual([1, 4, 5, 3, 2, 6, 7, 8, 9]);
+    for (let idx = 0; idx < STAGE_CENTER_ORDER.length; idx++) {
+      const id = STAGE_CENTER_ORDER[idx];
+      const c = CENTERS[id];
       expect(c).toBeDefined();
       expect(c.nameTh.length).toBeGreaterThan(5);
-      expect(c.spawnTimes[0]).toBeGreaterThan(5);
-      expect(c.spawnTimes[1]).toBeGreaterThan(c.spawnTimes[0]);
-      expect(c.spawnTimes[1]).toBeLessThan(DEFAULT_MATCH_DURATION - 5);
+      // Primary spawn time falls inside its 20-second stage window [idx*20, (idx+1)*20]
+      expect(c.spawnTimes[0]).toBeGreaterThanOrEqual(idx * 20 + 3);
+      expect(c.spawnTimes[0]).toBeLessThan((idx + 1) * 20);
+      expect(c.spawnTimes[1]).toBeGreaterThan(5);
+      expect(c.spawnTimes[1]).toBeLessThan(DEFAULT_MATCH_DURATION - 4);
     }
     // Verify 4 centers exhibit on Floor 1
     const floor1Centers = CENTER_LIST.filter((c) => c.exhibitionFloorGroup === 1);
     expect(floor1Centers.map((c) => c.id)).toEqual([1, 3, 4, 5]);
     expect(POWER_DURATION).toBe(5.0);
+  });
+
+  it('maps normalized match progress across all 9 sequential Center stages and handles out-of-range/NaN inputs', () => {
+    expect(stageIndexAtProgress(-0.5)).toBe(0);
+    expect(stageIndexAtProgress(NaN)).toBe(0);
+    expect(stageIndexAtProgress(0)).toBe(0);
+    expect(stageIndexAtProgress(1)).toBe(8);
+    expect(stageIndexAtProgress(1.5)).toBe(8);
+
+    const visited = [];
+    for (let i = 0; i < 9; i++) {
+      const midP = (i + 0.5) / 9;
+      expect(stageIndexAtProgress(midP)).toBe(i);
+      visited.push(stageCenterAtProgress(midP));
+    }
+    expect(visited).toEqual([1, 4, 5, 3, 2, 6, 7, 8, 9]);
+
+    const gates = stageGateDistances(180);
+    expect(gates).toHaveLength(9);
+    expect(gates[0]).toEqual({ stageIndex: 0, centerId: 1, d: 28 });
+    for (let i = 1; i < gates.length; i++) {
+      expect(gates[i].d).toBeGreaterThan(gates[i - 1].d);
+      expect(gates[i].centerId).toBe(STAGE_CENTER_ORDER[i]);
+    }
   });
 
   it('maps normalized match progress (0..1) across Floors 1..10, Zones 1..4, and Speed 12..25', () => {

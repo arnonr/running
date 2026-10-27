@@ -2,7 +2,7 @@
 import {
   PLAYER, GRAVITY, JUMP_V, SUPER_JUMP_V, OB, laneX, speedAtProgress, MAGNET_RANGE, VIEW_AHEAD, LANE_COUNT,
   trainLength, moverFront, moverSpan, DEFAULT_MATCH_DURATION, POWER_DURATION, PICKUP_PULL_RANGE,
-  floorAtProgress, zoneAtProgress, baseMultForFloor,
+  floorAtProgress, zoneAtProgress, baseMultForFloor, stageIndexAtProgress, stageCenterAtProgress,
 } from '../config';
 import type { Ob, Coin, CenterPickup, SimEvent, ObKind, Hint, CenterId, ZoneId } from './types';
 import { Track, type Spec } from './track';
@@ -25,6 +25,8 @@ export interface SimSnapshot {
   finished: boolean;
   floor: number;
   zoneId: ZoneId;
+  stageIndex: number;
+  stageCenter: CenterId;
   time: number;
   timeLeft: number;
   progress01: number;
@@ -70,6 +72,8 @@ export class Sim {
   matchDuration = DEFAULT_MATCH_DURATION;
   floor = 1;
   zoneId: ZoneId = 1;
+  stageIndex = 0;
+  stageCenter: CenterId = 1;
   sinceStumble = 99;
   stumbleSlow = 0;
   frontHitSlow = false;
@@ -136,7 +140,7 @@ export class Sim {
     Object.assign(this, {
       lane: 1, fromX: 0, laneT: 1, x: 0, y: 0, vy: 0, grounded: true, groundY: 0, slideT: 0, fastFall: false,
       slideQueued: false, coyoteT: 0, jumpBufT: 0, d: 0, speed: 0, alive: true, running: false, finished: false,
-      time: 0, matchDuration, floor: 1, zoneId: 1 as ZoneId,
+      time: 0, matchDuration, floor: 1, zoneId: 1 as ZoneId, stageIndex: 0, stageCenter: 1 as CenterId,
       sinceStumble: 99, stumbleSlow: 0, frontHitSlow: false, invulnerableT: 0, hitCount: 0,
       ignoreId: -1, ignoreT: 0, airTime: 0, peakY: 0, coins: 0, coinStreak: 0,
       coinStreakT: 0, score: 0, baseMult: 1, activeCenter: null, centerTimer: 0, shieldHits: 0,
@@ -363,15 +367,27 @@ export class Sim {
   private step(dt: number) {
     this.time += dt;
 
-    // Update Floor & Zone from elapsed time
+    // Update Floor, Zone & 9-Center Stage from elapsed time
     const p01 = this.progress01;
     const nextFloor = floorAtProgress(p01);
     const nextZone = zoneAtProgress(p01);
+    const nextStageIndex = stageIndexAtProgress(p01);
+    const nextStageCenter = stageCenterAtProgress(p01);
     if (nextFloor !== this.floor || nextZone !== this.zoneId) {
       this.floor = nextFloor;
       this.zoneId = nextZone;
       this.baseMult = baseMultForFloor(this.floor);
       this.events.push({ type: 'floorChange', floor: this.floor, zoneId: this.zoneId });
+    }
+    if (nextStageIndex !== this.stageIndex) {
+      this.stageIndex = nextStageIndex;
+      this.stageCenter = nextStageCenter;
+      this.events.push({
+        type: 'centerStageChange',
+        centerId: this.stageCenter,
+        stageIndex: this.stageIndex,
+        floor: this.floor,
+      });
     }
 
     // Check 180s match finish
@@ -379,6 +395,8 @@ export class Sim {
       this.time = this.matchDuration;
       this.floor = 10;
       this.zoneId = 4;
+      this.stageIndex = 8;
+      this.stageCenter = 9;
       this.finished = true;
       this.running = false;
       this.speed = 0;
@@ -737,6 +755,8 @@ export class Sim {
       finished: this.finished,
       floor: this.floor,
       zoneId: this.zoneId,
+      stageIndex: this.stageIndex,
+      stageCenter: this.stageCenter,
       time: +this.time.toFixed(2),
       timeLeft: +this.timeLeft.toFixed(2),
       progress01: +this.progress01.toFixed(3),

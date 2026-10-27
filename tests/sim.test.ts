@@ -121,4 +121,24 @@ describe('Sim: Forgiving No-Death Rules, 180s Timer & 9 Center Power-Ups', () =>
     expect(sim.running).toBe(false);
     expect(sim.floor).toBe(10);
   });
+
+  it('transitions through all 9 sequential Center stages and emits centerStageChange across custom 90s duration', () => {
+    const sim = new Sim(1);
+    sim.noSpawn = true;
+    sim.reset(1, false, 90);
+    sim.start();
+    expect(sim.stageCenter).toBe(1);
+    expect(sim.stageIndex).toBe(0);
+
+    const stageChanges: number[] = [sim.stageCenter];
+    for (let step = 0; step < 178; step++) {
+      sim.update(0.5);
+      for (const ev of sim.drainEvents()) {
+        if (ev.type === 'centerStageChange') {
+          stageChanges.push(ev.centerId);
+        }
+      }
+    }
+    expect(stageChanges).toEqual([1, 4, 5, 3, 2, 6, 7, 8, 9]);
+  });
 });
