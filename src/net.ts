@@ -170,6 +170,10 @@ export class MatchRoomCore {
     this.botSeeds.delete(id);
   }
 
+  getRunnerState(id: string): RunnerNetState | undefined {
+    return this.activeMap.get(id);
+  }
+
   updateRunnerState(
     id: string,
     state: Partial<Pick<RunnerNetState, 'lane' | 'x' | 'y' | 'd' | 'score' | 'coins' | 'floor' | 'activeCenter' | 'collectedCount' | 'sliding' | 'stumbling'>>,
@@ -581,7 +585,7 @@ export class NetClient {
         this.bc?.postMessage({ type: 'snapshot', snapshot: this.latestSnapshot } satisfies NetMessage);
       }
       this.emit();
-    }, 100);
+    }, 33);
   }
 
   onSnapshot(cb: (snap: RoomSnapshot) => void) {

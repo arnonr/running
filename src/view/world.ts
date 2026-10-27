@@ -1654,19 +1654,21 @@ export class World {
         const gridCol = (i % 3) - 1;
         const gridRow = Math.floor(i / 3);
         const hasCustomLane = !g.isBot && (g.lane !== 1 || Math.abs(g.x) > 0.05);
-        targetX = hasCustomLane ? (g.x || laneX(g.lane)) + gridCol * 0.25 : gridCol * 2.15;
+        targetX = hasCustomLane ? laneX(g.lane) + gridCol * 0.25 : gridCol * 2.15;
         targetZ = -1.2 - gridRow * 2.4;
       } else {
         const spreadX = ((i % 3) - 1) * 0.32;
         const rankZ = -7.8 + (g.rank - 1) * 1.65;
-        targetX = (g.x ?? laneX(g.lane)) + spreadX;
+        targetX = laneX(g.lane) + spreadX;
         targetZ = Math.max(-11.0, Math.min(-1.0, rankZ - g.packOffsetZ * 0.35));
       }
       const targetY = g.activeCenter === 1 ? Math.max(g.y ?? 0, 3.2 + Math.sin(this.time * 4 + i) * 0.2) : (g.y ?? 0);
-      const k = Math.min(1, dt * 9);
-      slot.x += (targetX - slot.x) * k;
-      slot.y += (targetY - slot.y) * k;
-      slot.z += (targetZ - slot.z) * k;
+      const kx = Math.min(1, dt * 18);
+      const ky = Math.min(1, dt * 18);
+      const kz = Math.min(1, dt * 9);
+      slot.x += (targetX - slot.x) * kx;
+      slot.y += (targetY - slot.y) * ky;
+      slot.z += (targetZ - slot.z) * kz;
       slot.group.position.set(slot.x, slot.y, slot.z);
 
       // Update 3D 9-Center power-up attachments & particle bursts on TV

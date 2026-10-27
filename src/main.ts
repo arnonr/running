@@ -262,6 +262,25 @@ async function main() {
     }
   });
 
+  function publishRunnerStateNow() {
+    if (soloRun || isTvMode) return;
+    netPublishTimer = 0;
+    const jumpLiftY = !sim.grounded && sim.vy > 0 && sim.y < 0.3 ? 0.35 : sim.y;
+    net.sendRunnerState(savedProfile.id, {
+      lane: sim.lane,
+      x: +laneX(sim.lane).toFixed(2),
+      y: +jumpLiftY.toFixed(2),
+      d: +sim.d.toFixed(1),
+      score: Math.floor(sim.score),
+      coins: sim.coins,
+      floor: sim.floor,
+      activeCenter: sim.activeCenter,
+      collectedCount: sim.collectedCenters.size,
+      sliding: sim.sliding,
+      stumbling: sim.stumbleSlow > 0.1 || sim.sinceStumble < 0.65,
+    });
+  }
+
   function onAction(a: Action) {
     if (a === 'mute') {
       toggleMute();
@@ -307,10 +326,19 @@ async function main() {
       state = 'pause';
       audio.stopMusic();
       ui.show('pause');
-    } else if (a === 'left') sim.left();
-    else if (a === 'right') sim.right();
-    else if (a === 'up') sim.jump();
-    else if (a === 'down') sim.down();
+    } else if (a === 'left') {
+      sim.left();
+      publishRunnerStateNow();
+    } else if (a === 'right') {
+      sim.right();
+      publishRunnerStateNow();
+    } else if (a === 'up') {
+      sim.jump();
+      publishRunnerStateNow();
+    } else if (a === 'down') {
+      sim.down();
+      publishRunnerStateNow();
+    }
   }
 
   bindInput(document.getElementById('ui')!, onAction, () => state === 'play' || state === 'start');
@@ -425,26 +453,28 @@ async function main() {
       sim.invincible = false;
       sim.update(dt);
       netPublishTimer += dt;
-      if (!soloRun && netPublishTimer >= 0.2) {
-        netPublishTimer = 0;
-        net.sendRunnerState(savedProfile.id, {
-          lane: sim.lane,
-          x: +sim.x.toFixed(2),
-          y: +sim.y.toFixed(2),
-          d: +sim.d.toFixed(1),
-          score: Math.floor(sim.score),
-          coins: sim.coins,
-          floor: sim.floor,
-          activeCenter: sim.activeCenter,
-          collectedCount: sim.collectedCenters.size,
-          sliding: sim.sliding,
-          stumbling: sim.stumbleSlow > 0.1 || sim.sinceStumble < 0.65,
-        });
-      }
     }
 
     const events = isTvMode ? [] : sim.drainEvents();
-    for (const ev of events) handleSimEvent(ev);
+    let hasUrgentSimEvent = false;
+    for (const ev of events) {
+      handleSimEvent(ev);
+      if (
+        ev.type === 'lane' ||
+        ev.type === 'jump' ||
+        ev.type === 'land' ||
+        ev.type === 'slide' ||
+        ev.type === 'centerPower' ||
+        ev.type === 'centerPowerEnd' ||
+        ev.type === 'stumble' ||
+        ev.type === 'hit'
+      ) {
+        hasUrgentSimEvent = true;
+      }
+    }
+    if (state === 'play' && !soloRun && (hasUrgentSimEvent || netPublishTimer >= 0.05)) {
+      publishRunnerStateNow();
+    }
 
     const inMenu = isTvMode ? false : state === 'start';
     if (!inMenu && !isTvMode) {
