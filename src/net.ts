@@ -344,6 +344,8 @@ export class MatchRoomCore {
 
     // Reset existing active runners for the new round
     for (const r of this.activeMap.values()) {
+      r.lane = 1;
+      r.x = 0;
       r.d = 0;
       r.y = 0;
       r.score = 0;

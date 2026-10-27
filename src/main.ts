@@ -9,7 +9,7 @@ import { UI, type Screen } from './ui';
 import { load, save } from './storage';
 import {
   SPEED, DEFAULT_MATCH_DURATION, VIEW_AHEAD, CENTERS,
-  stepTvClock,
+  stepTvClock, laneX,
 } from './config';
 import { NetClient, AVATAR_COLORS, type PlayerProfile, type RoomSnapshot } from './net';
 import { sanitizeAvatarId, AVATARS } from './view/avatars';
@@ -275,6 +275,20 @@ async function main() {
         else if (a === 'down') audio.slide();
         else audio.lane();
         world.player.warmUpAction(a);
+        if (a === 'left') sim.lane = Math.max(0, sim.lane - 1);
+        else if (a === 'right') sim.lane = Math.min(2, sim.lane + 1);
+        net.sendRunnerState(savedProfile.id, {
+          lane: sim.lane,
+          x: laneX(sim.lane),
+          y: a === 'up' ? 1.25 : 0,
+        });
+        if (a === 'up') {
+          window.setTimeout(() => {
+            if (state === 'start') {
+              net.sendRunnerState(savedProfile.id, { y: 0 });
+            }
+          }, 420);
+        }
       }
       return;
     }
@@ -430,13 +444,12 @@ async function main() {
     const events = isTvMode ? [] : sim.drainEvents();
     for (const ev of events) handleSimEvent(ev);
 
-    const inMenu = isTvMode ? latestRoom.phase === 'LOBBY' : state === 'start';
+    const inMenu = isTvMode ? false : state === 'start';
     if (!inMenu && !isTvMode) {
       world.player.update(sim, state === 'pause' ? 0 : dt, events);
     }
-    // Only show other Ghost runners when in a synchronized RUNNING match (not during Solo Play or when room is still in LOBBY)
     const visibleGhosts =
-      !soloRun && latestRoom.phase === 'RUNNING' ? latestRoom.activeRunners : [];
+      !soloRun && (isTvMode || latestRoom.phase === 'RUNNING') ? latestRoom.activeRunners : [];
     world.sync(sim, state === 'pause' ? 0 : dt, inMenu, visibleGhosts, savedProfile.id, isTvMode);
 
     audio.tempo = 112 + (sim.speed - SPEED.start) * 1.5;

@@ -1114,7 +1114,7 @@ export class World {
     ringGeo.rotateX(-Math.PI / 2);
     const runClip = core.animations.find((c) => c.name === 'run') || core.animations[0];
 
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 10; i++) {
       const group = new THREE.Group();
       group.visible = false;
 
@@ -1378,11 +1378,11 @@ export class World {
 
     // 9-Center Open-Horizon Scenery: Portal Gates, Animated 3D Center Landmarks, Overhead Sky Elements & Billboards!
     this.syncNineCenterScenery(sim, pd, zOf);
-    this.syncGhostPack(dt, menu, ghosts, localPlayerId, tvMode);
+    this.syncGhostPack(dt, menu && !tvMode, ghosts, localPlayerId, tvMode, sim.speed > 0.1);
 
-    this.player.root.visible = !tvMode || menu;
-    if (menu) this.player.menu(dt);
-    this.updateCamera(sim, dt, menu, tvMode);
+    this.player.root.visible = !tvMode;
+    if (menu && !tvMode) this.player.menu(dt);
+    this.updateCamera(sim, dt, menu && !tvMode, tvMode);
     this.skyDome.position.copy(this.camera.position);
 
     const speedFactor = menu || !sim.alive ? 0 : Math.max(0, Math.min(1, (sim.speed - 14) / 12));
@@ -1543,7 +1543,14 @@ export class World {
     for (const meta of CENTER_LIST) this.centerBillboards[meta.id].end();
   }
 
-  private syncGhostPack(dt: number, menu: boolean, ghosts: RunnerNetState[], localPlayerId: string, tvMode: boolean) {
+  private syncGhostPack(
+    dt: number,
+    menu: boolean,
+    ghosts: RunnerNetState[],
+    localPlayerId: string,
+    tvMode: boolean,
+    isRunning = true,
+  ) {
     const others = menu
       ? []
       : ghosts.filter((g) => tvMode || g.id !== localPlayerId).slice(0, this.ghostSlots.length);
@@ -1593,14 +1600,25 @@ export class World {
         slot.avatar = gAvatar;
         applyAvatarToCharacter(slot.charClone, gAvatar);
       }
-      slot.mixer.update(dt);
+      slot.mixer.update(dt * (isRunning ? 1.0 : 0.65));
       updateAvatarMotion(slot.charClone, this.time + i * 0.37, true);
 
-      const spreadX = ((i % 3) - 1) * 0.28;
-      const spreadZ = -i * 1.15;
-      const targetX = (g.x ?? laneX(g.lane)) + spreadX;
+      let targetX: number;
+      let targetZ: number;
+      if (!isRunning) {
+        // Starting Line Grid in LOBBY / COUNTDOWN: spread runners across 3 columns and rows so all are clearly visible!
+        const gridCol = (i % 3) - 1;
+        const gridRow = Math.floor(i / 3);
+        const hasCustomLane = !g.isBot && (g.lane !== 1 || Math.abs(g.x) > 0.05);
+        targetX = hasCustomLane ? (g.x || laneX(g.lane)) + gridCol * 0.25 : gridCol * 2.15;
+        targetZ = -1.2 - gridRow * 2.4;
+      } else {
+        const spreadX = ((i % 3) - 1) * 0.28;
+        const spreadZ = -i * 1.15;
+        targetX = (g.x ?? laneX(g.lane)) + spreadX;
+        targetZ = -g.packOffsetZ + spreadZ;
+      }
       const targetY = g.y ?? 0;
-      const targetZ = -g.packOffsetZ + spreadZ;
       const k = Math.min(1, dt * 9);
       slot.x += (targetX - slot.x) * k;
       slot.y += (targetY - slot.y) * k;
