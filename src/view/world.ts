@@ -19,6 +19,9 @@ import {
 import type { Sim } from '../sim/sim';
 import type { SimEvent, CenterId, Ob } from '../sim/types';
 import type { RunnerNetState } from '../net';
+import {
+  applyAvatarToCharacter, updateAvatarMotion, sanitizeAvatarId, type AvatarId,
+} from './avatars';
 
 const m4 = new THREE.Matrix4();
 const q = new THREE.Quaternion();
@@ -54,6 +57,8 @@ export const SCENERY_POOL_LIMITS = {
 
 interface GhostSlot {
   group: THREE.Group;
+  charClone: THREE.Object3D;
+  avatar: AvatarId;
   mixer: THREE.AnimationMixer;
   ring: THREE.Mesh;
   badge: THREE.Sprite;
@@ -1133,7 +1138,18 @@ export class World {
 
       group.add(charClone, ring, badge);
       scene.add(group);
-      this.ghostSlots.push({ group, mixer, ring, badge, badgeKey: '', x: laneX(i % 3), y: 0, z: -4 - i * 3 });
+      this.ghostSlots.push({
+        group,
+        charClone,
+        avatar: 'non',
+        mixer,
+        ring,
+        badge,
+        badgeKey: '',
+        x: laneX(i % 3),
+        y: 0,
+        z: -4 - i * 3,
+      });
     }
   }
 
@@ -1538,7 +1554,13 @@ export class World {
         continue;
       }
       slot.group.visible = true;
+      const gAvatar = sanitizeAvatarId(g.avatar);
+      if (slot.avatar !== gAvatar) {
+        slot.avatar = gAvatar;
+        applyAvatarToCharacter(slot.charClone, gAvatar);
+      }
       slot.mixer.update(dt);
+      updateAvatarMotion(slot.charClone, this.time + i * 0.37, true);
 
       const spreadX = ((i % 3) - 1) * 0.28;
       const spreadZ = -i * 1.35;

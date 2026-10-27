@@ -280,6 +280,14 @@ function buildAvatarBodyMaterial(baseMat: THREE.Material, avatarId: AvatarId): T
     g.globalAlpha = 0.35;
     g.fillStyle = hex;
     g.fillRect(x, y, w, h);
+    const cRgb = new THREE.Color(hex);
+    const luma = 0.299 * cRgb.r + 0.587 * cRgb.g + 0.114 * cRgb.b;
+    if (luma > 0.72) {
+      g.globalCompositeOperation = 'screen';
+      g.globalAlpha = Math.min(0.72, (luma - 0.65) * 1.85);
+      g.fillStyle = hex;
+      g.fillRect(x, y, w, h);
+    }
     g.restore();
   };
 
@@ -349,6 +357,8 @@ function attachBoneCostumes(characterRoot: THREE.Object3D, avatarId: AvatarId) {
 
   // ==========================================================================
   // 🎀 MAY ('may' · Techno Girl — หญิง): Flowing High Ponytail + Pink Bow + Pleated Skirt
+  // In mixamorig:Head space (IBM: by = 100*y - 141.97, bz = 100*z + 0.75):
+  // Skull is centered at (0, 21, 1.5) with radius ~21.2cm; eyes at (0, 16.5, 22).
   // ==========================================================================
   if (avatarId === 'may') {
     if (headBone) {
@@ -356,41 +366,44 @@ function attachBoneCostumes(characterRoot: THREE.Object3D, avatarId: AvatarId) {
       headGrp.userData.isAvatarCostume = true;
       headGrp.name = 'avatar-head-may';
 
-      // Smooth crown hair dome + side bangs framing face
-      const crownHair = new THREE.Mesh(new THREE.SphereGeometry(14.5, 16, 14), hairMat);
-      crownHair.scale.set(1.02, 0.95, 1.08);
-      crownHair.position.set(0, 27, -2);
+      // Smooth crown hair dome over top & back of skull + side bangs framing cheeks
+      const crownHair = new THREE.Mesh(
+        new THREE.SphereGeometry(22.0, 18, 14, 0, Math.PI * 2, 0, Math.PI * 0.58),
+        hairMat,
+      );
+      crownHair.position.set(0, 21.5, 0.5);
+      crownHair.rotation.x = -0.35;
       for (const s of [-1, 1]) {
-        const sideLock = new THREE.Mesh(new THREE.CapsuleGeometry(3.2, 14, 6, 10), hairMat);
-        sideLock.position.set(s * 12.5, 16, 9);
-        sideLock.rotation.z = s * 0.15;
+        const sideLock = new THREE.Mesh(new THREE.CapsuleGeometry(3.8, 15, 6, 10), hairMat);
+        sideLock.position.set(s * 19.2, 14, 13.5);
+        sideLock.rotation.z = s * 0.14;
         headGrp.add(sideLock);
       }
 
-      // Pink Twin-Loop Ribbon Bow at high ponytail base
-      const bowCenter = new THREE.Mesh(new THREE.SphereGeometry(3.2, 10, 10), accentMat);
-      bowCenter.position.set(0, 29, -15);
+      // Pink Twin-Loop Ribbon Bow at high ponytail crown (visible from front silhouette & back)
+      const bowCenter = new THREE.Mesh(new THREE.SphereGeometry(4.2, 12, 10), accentMat);
+      bowCenter.position.set(0, 35, -16);
       for (const s of [-1, 1]) {
-        const bowWing = new THREE.Mesh(new THREE.ConeGeometry(5.5, 9.5, 12), accentMat);
-        bowWing.rotation.z = s * (Math.PI / 2 - 0.25);
-        bowWing.position.set(s * 5.8, 29.5, -15.5);
+        const bowWing = new THREE.Mesh(new THREE.ConeGeometry(7.8, 14, 12), accentMat);
+        bowWing.rotation.z = s * (Math.PI / 2 - 0.22);
+        bowWing.position.set(s * 9.2, 36.5, -16.5);
         headGrp.add(bowWing);
       }
 
       // Dynamic swaying Ponytail pivot group (`userData.isPonytailPivot`)
       const tailPivot = new THREE.Group();
-      tailPivot.position.set(0, 28, -16.5);
+      tailPivot.position.set(0, 32, -19.5);
       tailPivot.userData.isPonytailPivot = true;
 
-      const tailUpper = new THREE.Mesh(new THREE.ConeGeometry(6.8, 24, 14), hairMat);
+      const tailUpper = new THREE.Mesh(new THREE.ConeGeometry(8.6, 26, 14), hairMat);
       tailUpper.rotation.x = -Math.PI * 0.68;
-      tailUpper.position.set(0, -5, -10);
-      const tailLower = new THREE.Mesh(new THREE.ConeGeometry(5.2, 20, 14), hairMat);
+      tailUpper.position.set(0, -4, -11);
+      const tailLower = new THREE.Mesh(new THREE.ConeGeometry(6.4, 22, 14), hairMat);
       tailLower.rotation.x = -Math.PI * 0.82;
-      tailLower.position.set(0, -16, -18);
-      const tailTip = new THREE.Mesh(new THREE.ConeGeometry(3.2, 12, 12), accentMat);
+      tailLower.position.set(0, -16, -20);
+      const tailTip = new THREE.Mesh(new THREE.ConeGeometry(3.8, 13, 12), accentMat);
       tailTip.rotation.x = -Math.PI * 0.86;
-      tailTip.position.set(0, -24, -22);
+      tailTip.position.set(0, -25, -25);
       tailPivot.add(tailUpper, tailLower, tailTip);
 
       headGrp.add(crownHair, bowCenter, tailPivot);
@@ -405,17 +418,17 @@ function attachBoneCostumes(characterRoot: THREE.Object3D, avatarId: AvatarId) {
 
       const navySkirtMat = new THREE.MeshPhongMaterial({ color: 0x1e3a8a, side: THREE.DoubleSide, shininess: 40 });
       // Flared pleated school skirt + pink waist belt + hem stripe
-      const waistBelt = new THREE.Mesh(new THREE.TorusGeometry(13.5, 1.8, 8, 20), accentMat);
+      const waistBelt = new THREE.Mesh(new THREE.TorusGeometry(15.2, 2.0, 8, 24), accentMat);
       waistBelt.rotation.x = Math.PI / 2;
-      waistBelt.position.set(0, hipSign * -4, 0);
+      waistBelt.position.set(0, hipSign * -3, -1.5);
 
-      const skirtCone = new THREE.Mesh(new THREE.CylinderGeometry(13.2, 22.5, 22, 18, 1, true), navySkirtMat);
+      const skirtCone = new THREE.Mesh(new THREE.CylinderGeometry(15.0, 24.5, 24, 20, 1, true), navySkirtMat);
       if (isHipsFallback) skirtCone.rotation.x = Math.PI;
-      skirtCone.position.set(0, hipSign * -14, 0);
+      skirtCone.position.set(0, hipSign * -14, -1.5);
 
-      const hemTrim = new THREE.Mesh(new THREE.TorusGeometry(21.8, 1.1, 8, 20), accentMat);
+      const hemTrim = new THREE.Mesh(new THREE.TorusGeometry(23.8, 1.3, 8, 24), accentMat);
       hemTrim.rotation.x = Math.PI / 2;
-      hemTrim.position.set(0, hipSign * -24, 0);
+      hemTrim.position.set(0, hipSign * -25, -1.5);
 
       hipGrp.add(waistBelt, skirtCone, hemTrim);
       spineBone.add(hipGrp);
@@ -431,25 +444,28 @@ function attachBoneCostumes(characterRoot: THREE.Object3D, avatarId: AvatarId) {
       headGrp.userData.isAvatarCostume = true;
       headGrp.name = 'avatar-head-praw';
 
-      const crownHair = new THREE.Mesh(new THREE.SphereGeometry(14.4, 16, 14), hairMat);
-      crownHair.scale.set(1.02, 0.95, 1.06);
-      crownHair.position.set(0, 27, -1.5);
+      const crownHair = new THREE.Mesh(
+        new THREE.SphereGeometry(22.0, 18, 14, 0, Math.PI * 2, 0, Math.PI * 0.58),
+        hairMat,
+      );
+      crownHair.position.set(0, 21.5, 0.5);
+      crownHair.rotation.x = -0.35;
       headGrp.add(crownHair);
 
-      // Twin space-buns (Chignon buns) on left and right with glowing mint hair-rings
+      // Twin space-buns (Chignon buns) on upper-left & upper-right of skull with glowing mint hair-rings
       for (const s of [-1, 1]) {
-        const bun = new THREE.Mesh(new THREE.SphereGeometry(6.8, 14, 14), hairMat);
-        bun.position.set(s * 13.5, 34.5, -5);
-        const bunRing = new THREE.Mesh(new THREE.TorusGeometry(5.6, 1.1, 8, 18), accentMat);
-        bunRing.position.set(s * 11.5, 33.2, -4.5);
+        const bun = new THREE.Mesh(new THREE.SphereGeometry(8.5, 16, 14), hairMat);
+        bun.position.set(s * 18.5, 37.5, -4);
+        const bunRing = new THREE.Mesh(new THREE.TorusGeometry(7.0, 1.4, 8, 20), accentMat);
+        bunRing.position.set(s * 15.8, 35.2, -3.5);
         bunRing.rotation.y = s * 0.65;
         bunRing.rotation.x = 0.55;
         headGrp.add(bun, bunRing);
       }
 
-      // Translucent Mint Hologram Lab Visor Glasses across eyes
+      // Translucent Mint Hologram Lab Visor Glasses across eyes (by = 17, bz = +26)
       const visorGlass = new THREE.Mesh(
-        new THREE.CylinderGeometry(14.2, 14.2, 6.2, 16, 1, true, -Math.PI * 0.35, Math.PI * 0.7),
+        new THREE.CylinderGeometry(22.6, 22.6, 7.5, 20, 1, true, -Math.PI * 0.34, Math.PI * 0.68),
         new THREE.MeshPhongMaterial({
           color: 0x2dd4bf,
           emissive: 0x0d9488,
@@ -459,11 +475,9 @@ function attachBoneCostumes(characterRoot: THREE.Object3D, avatarId: AvatarId) {
           shininess: 110,
         }),
       );
-      visorGlass.position.set(0, 20.5, 2.5);
-      const visorFrame = new THREE.Mesh(new THREE.TorusGeometry(14.3, 0.7, 8, 20, Math.PI * 0.72), whiteMat);
-      visorFrame.rotation.x = Math.PI / 2;
-      visorFrame.rotation.z = -Math.PI * 0.36;
-      visorFrame.position.set(0, 23.5, 2.5);
+      visorGlass.position.set(0, 17.5, 5.2);
+      const visorFrame = new THREE.Mesh(new THREE.BoxGeometry(36, 1.6, 4), whiteMat);
+      visorFrame.position.set(0, 21.4, 24.5);
       headGrp.add(visorGlass, visorFrame);
       headBone.add(headGrp);
     }
@@ -474,18 +488,17 @@ function attachBoneCostumes(characterRoot: THREE.Object3D, avatarId: AvatarId) {
       coatGrp.userData.isSkirtGroup = true;
       coatGrp.name = 'avatar-coat-praw';
 
-      // Flared White Lab-Coat Tail with Mint Bio-Trim around hips
+      // Flared White Lab-Coat Tail with Mint Bio-Trim around hips (open at front +Z, wraps sides & back -Z)
       const coatFlare = new THREE.Mesh(
-        new THREE.CylinderGeometry(13.8, 21.0, 25, 16, 1, true, -Math.PI * 0.82, Math.PI * 1.64),
+        new THREE.CylinderGeometry(15.4, 23.5, 26, 20, 1, true, Math.PI * 0.18, Math.PI * 1.64),
         new THREE.MeshPhongMaterial({ color: 0xf8fafc, side: THREE.DoubleSide, shininess: 60 }),
       );
       if (isHipsFallback) coatFlare.rotation.x = Math.PI;
-      coatFlare.rotation.y = Math.PI;
-      coatFlare.position.set(0, hipSign * -15, 0);
+      coatFlare.position.set(0, hipSign * -15, -1.5);
 
-      const belt = new THREE.Mesh(new THREE.TorusGeometry(14.0, 1.5, 8, 20), accentMat);
+      const belt = new THREE.Mesh(new THREE.TorusGeometry(15.5, 1.8, 8, 24), accentMat);
       belt.rotation.x = Math.PI / 2;
-      belt.position.set(0, hipSign * -3, 0);
+      belt.position.set(0, hipSign * -3, -1.5);
       coatGrp.add(coatFlare, belt);
       spineBone.add(coatGrp);
     }
@@ -494,10 +507,10 @@ function attachBoneCostumes(characterRoot: THREE.Object3D, avatarId: AvatarId) {
       // Compact Bio-Capsule Med-Pack on upper back
       const bioPack = new THREE.Group();
       bioPack.userData.isAvatarCostume = true;
-      const caseBox = new THREE.Mesh(new THREE.BoxGeometry(16, 20, 8), whiteMat);
-      caseBox.position.set(0, 6, -15);
-      const vial = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.2, 15, 12), accentMat);
-      vial.position.set(0, 6, -19.5);
+      const caseBox = new THREE.Mesh(new THREE.BoxGeometry(18, 22, 9), whiteMat);
+      caseBox.position.set(0, 8, -13);
+      const vial = new THREE.Mesh(new THREE.CylinderGeometry(3.8, 3.8, 17, 12), accentMat);
+      vial.position.set(0, 8, -18);
       bioPack.add(caseBox, vial);
       spine2Bone.add(bioPack);
     }
@@ -512,32 +525,39 @@ function attachBoneCostumes(characterRoot: THREE.Object3D, avatarId: AvatarId) {
       headGrp.userData.isAvatarCostume = true;
       headGrp.name = 'avatar-head-kin';
 
-      // Spiky dark hair tufts on crown
-      const baseHair = new THREE.Mesh(new THREE.SphereGeometry(14.3, 14, 12), hairMat);
-      baseHair.position.set(0, 27, -1.5);
+      // Spiky dark hair tufts on crown (above by = 38)
+      const baseHair = new THREE.Mesh(
+        new THREE.SphereGeometry(21.8, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.55),
+        hairMat,
+      );
+      baseHair.position.set(0, 21.5, 0.5);
+      baseHair.rotation.x = -0.3;
       headGrp.add(baseHair);
       for (let i = -2; i <= 2; i++) {
-        const spike = new THREE.Mesh(new THREE.ConeGeometry(4.2, 11, 8), hairMat);
-        spike.position.set(i * 4.5, 39, -2 + Math.abs(i) * 2);
+        const spike = new THREE.Mesh(new THREE.ConeGeometry(5.5, 14, 10), hairMat);
+        spike.position.set(i * 6.0, 41 - Math.abs(i) * 1.4, 2 - Math.abs(i) * 2);
         spike.rotation.z = -i * 0.22;
-        spike.rotation.x = -0.25;
+        spike.rotation.x = -0.2;
         headGrp.add(spike);
       }
 
-      // Industrial Comms Headset Band + Ear Cups + Amber HUD Visor
-      const headband = new THREE.Mesh(new THREE.TorusGeometry(15.2, 1.3, 8, 20, Math.PI), accentMat);
-      headband.position.set(0, 24, 0);
+      // Industrial Comms Headset Band + Ear Cups + Curved Amber HUD Visor
+      const headband = new THREE.Mesh(new THREE.TorusGeometry(23.0, 1.8, 8, 24, Math.PI), accentMat);
+      headband.position.set(0, 20, 0);
       for (const s of [-1, 1]) {
-        const earCup = new THREE.Mesh(new THREE.CylinderGeometry(4.6, 4.6, 3.2, 12), darkMat);
+        const earCup = new THREE.Mesh(new THREE.CylinderGeometry(6.0, 6.0, 4.0, 14), darkMat);
         earCup.rotation.z = Math.PI / 2;
-        earCup.position.set(s * 15.2, 21, 0);
-        const earRing = new THREE.Mesh(new THREE.TorusGeometry(3.6, 0.7, 8, 14), accentMat);
+        earCup.position.set(s * 22.2, 16.5, 0);
+        const earRing = new THREE.Mesh(new THREE.TorusGeometry(4.6, 0.9, 8, 16), accentMat);
         earRing.rotation.y = Math.PI / 2;
-        earRing.position.set(s * 16.9, 21, 0);
+        earRing.position.set(s * 24.4, 16.5, 0);
         headGrp.add(earCup, earRing);
       }
-      const eyeVisor = new THREE.Mesh(new THREE.BoxGeometry(24, 5.2, 6), accentMat);
-      eyeVisor.position.set(0, 21, 13);
+      const eyeVisor = new THREE.Mesh(
+        new THREE.CylinderGeometry(22.6, 22.6, 6.8, 20, 1, true, -Math.PI * 0.34, Math.PI * 0.68),
+        accentMat,
+      );
+      eyeVisor.position.set(0, 17.5, 5.2);
       headGrp.add(headband, eyeVisor);
       headBone.add(headGrp);
     }
@@ -549,20 +569,20 @@ function attachBoneCostumes(characterRoot: THREE.Object3D, avatarId: AvatarId) {
 
       // Twin Robotic Shoulder Pauldrons + Back Arc-Reactor Core
       for (const s of [-1, 1]) {
-        const pauldron = new THREE.Mesh(new THREE.BoxGeometry(12, 7, 15), accentMat);
-        pauldron.position.set(s * 19.5, 13, 0);
-        pauldron.rotation.z = -s * 0.28;
-        const trim = new THREE.Mesh(new THREE.BoxGeometry(12.6, 2.2, 15.6), darkMat);
-        trim.position.set(s * 19.5, 11.5, 0);
-        trim.rotation.z = -s * 0.28;
+        const pauldron = new THREE.Mesh(new THREE.BoxGeometry(14, 8, 18), accentMat);
+        pauldron.position.set(s * 22.5, 14.5, -1);
+        pauldron.rotation.z = -s * 0.25;
+        const trim = new THREE.Mesh(new THREE.BoxGeometry(14.8, 2.5, 18.8), darkMat);
+        trim.position.set(s * 22.5, 12.5, -1);
+        trim.rotation.z = -s * 0.25;
         armorGrp.add(pauldron, trim);
       }
-      const coreFrame = new THREE.Mesh(new THREE.CylinderGeometry(8.5, 9.5, 7, 12), darkMat);
+      const coreFrame = new THREE.Mesh(new THREE.CylinderGeometry(9.5, 10.5, 7, 14), darkMat);
       coreFrame.rotation.x = Math.PI / 2;
-      coreFrame.position.set(0, 7, -14);
-      const coreGlow = new THREE.Mesh(new THREE.CylinderGeometry(5.5, 5.5, 8.2, 12), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
+      coreFrame.position.set(0, 8, -12);
+      const coreGlow = new THREE.Mesh(new THREE.CylinderGeometry(6.2, 6.2, 8.2, 14), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
       coreGlow.rotation.x = Math.PI / 2;
-      coreGlow.position.set(0, 7, -14.5);
+      coreGlow.position.set(0, 8, -12.6);
       armorGrp.add(coreFrame, coreGlow);
       spine2Bone.add(armorGrp);
     }
@@ -577,12 +597,12 @@ function attachBoneCostumes(characterRoot: THREE.Object3D, avatarId: AvatarId) {
       helmetGrp.userData.isAvatarCostume = true;
       helmetGrp.name = 'avatar-helmet-sky';
 
-      // Outer white astronaut pressure helmet shell
-      const shell = new THREE.Mesh(new THREE.SphereGeometry(17.5, 20, 18), whiteMat);
-      shell.position.set(0, 23, 0.5);
-      // Reflective Gold Solar Visor on front of helmet
+      // Outer white astronaut pressure helmet shell (encloses entire 21.5cm head)
+      const shell = new THREE.Mesh(new THREE.SphereGeometry(26.5, 24, 20), whiteMat);
+      shell.position.set(0, 19.5, 2.2);
+      // Reflective Gold Solar Visor on front (+Z) of helmet (phi centered at Math.PI / 2)
       const goldVisor = new THREE.Mesh(
-        new THREE.SphereGeometry(16.6, 18, 16, -Math.PI * 0.38, Math.PI * 0.76, Math.PI * 0.22, Math.PI * 0.48),
+        new THREE.SphereGeometry(27.1, 22, 18, Math.PI * 0.15, Math.PI * 0.70, Math.PI * 0.24, Math.PI * 0.46),
         new THREE.MeshPhongMaterial({
           color: 0xfacc15,
           emissive: 0xa16207,
@@ -590,16 +610,15 @@ function attachBoneCostumes(characterRoot: THREE.Object3D, avatarId: AvatarId) {
           shininess: 120,
         }),
       );
-      goldVisor.rotation.y = Math.PI / 2;
-      goldVisor.position.set(0, 23, 2.2);
+      goldVisor.position.set(0, 19.5, 2.2);
       // Magenta neck seal ring + comms antenna ear pod
-      const neckRing = new THREE.Mesh(new THREE.TorusGeometry(13.5, 2.0, 10, 24), accentMat);
+      const neckRing = new THREE.Mesh(new THREE.TorusGeometry(18.5, 2.4, 10, 24), accentMat);
       neckRing.rotation.x = Math.PI / 2;
-      neckRing.position.set(0, 9.5, 0);
-      const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 1.1, 14, 8), accentMat);
-      antenna.position.set(16.5, 32, -2);
-      const antTip = new THREE.Mesh(new THREE.SphereGeometry(2.0, 8, 8), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
-      antTip.position.set(16.5, 39.5, -2);
+      neckRing.position.set(0, -1.5, 1.5);
+      const antenna = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.5, 16, 8), accentMat);
+      antenna.position.set(25.5, 29, 0);
+      const antTip = new THREE.Mesh(new THREE.SphereGeometry(2.8, 10, 10), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
+      antTip.position.set(25.5, 38, 0);
 
       helmetGrp.add(shell, goldVisor, neckRing, antenna, antTip);
       headBone.add(helmetGrp);
@@ -612,12 +631,12 @@ function attachBoneCostumes(characterRoot: THREE.Object3D, avatarId: AvatarId) {
 
       // Twin Cylindrical Oxygen Life-Support Tanks + Cosmic Halo Collar
       for (const s of [-1, 1]) {
-        const tank = new THREE.Mesh(new THREE.CylinderGeometry(5.2, 5.2, 24, 14), whiteMat);
-        tank.position.set(s * 6.5, 6, -16);
-        const capTop = new THREE.Mesh(new THREE.SphereGeometry(5.2, 12, 10), accentMat);
-        capTop.position.set(s * 6.5, 18, -16);
-        const band = new THREE.Mesh(new THREE.CylinderGeometry(5.5, 5.5, 3.5, 14), accentMat);
-        band.position.set(s * 6.5, 6, -16);
+        const tank = new THREE.Mesh(new THREE.CylinderGeometry(6.2, 6.2, 26, 14), whiteMat);
+        tank.position.set(s * 7.5, 7, -14);
+        const capTop = new THREE.Mesh(new THREE.SphereGeometry(6.2, 12, 10), accentMat);
+        capTop.position.set(s * 7.5, 20, -14);
+        const band = new THREE.Mesh(new THREE.CylinderGeometry(6.6, 6.6, 4.0, 14), accentMat);
+        band.position.set(s * 7.5, 7, -14);
         packGrp.add(tank, capTop, band);
       }
       spine2Bone.add(packGrp);

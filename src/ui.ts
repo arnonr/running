@@ -7,6 +7,9 @@ import {
   AVATAR_COLORS, ROLE_LABELS, sanitizeNickname,
   type PlayerProfile, type PlayerRole, type RoomSnapshot, type HostCommand,
 } from './net';
+import {
+  AVATARS, AVATAR_LIST, sanitizeAvatarId, type AvatarId,
+} from './view/avatars';
 
 export type Screen = 'start' | 'countdown' | 'play' | 'pause' | 'over';
 
@@ -48,6 +51,7 @@ export function groupCentersByExhibitionFloor(collected: Iterable<CenterId>): Ex
 export interface UIHandlers {
   joinQueue(profile: PlayerProfile): void;
   playSoloNow(profile: PlayerProfile): void;
+  selectAvatar?(avatarId: AvatarId): void;
   resume(): void;
   pause(): void;
   restart(): void;
@@ -82,7 +86,7 @@ export class UI {
     tvMode = false,
   ) {
     this.root = root;
-    this.profile = { ...initialProfile };
+    this.profile = { ...initialProfile, avatar: sanitizeAvatarId(initialProfile.avatar) };
     this.tvMode = tvMode;
     this.renderDOM();
     this.setMuted(muted);
@@ -104,6 +108,16 @@ export class UI {
     const colorsHtml = AVATAR_COLORS.map(
       (col) =>
         `<button type="button" class="color-dot ${this.profile.color === col ? 'on' : ''}" data-color="${col}" style="background:${col}" aria-label="color ${col}"></button>`,
+    ).join('');
+
+    const currentAvatar = sanitizeAvatarId(this.profile.avatar);
+    const avatarsHtml = AVATAR_LIST.map(
+      (av) =>
+        `<button type="button" class="avatar-card ${currentAvatar === av.id ? 'on' : ''}" data-avatar="${av.id}" style="--av-accent:${av.accentHex}">
+          <span class="av-ico">${av.icon}</span>
+          <b class="av-name">${av.nameTh}</b>
+          <small class="av-sub">${av.genderLabelTh} · ${av.roleBadgeTh}</small>
+        </button>`,
     ).join('');
 
     this.root.innerHTML = `
@@ -166,6 +180,11 @@ export class UI {
           <div class="form-row">
             <label for="inp-name">ชื่อเล่นบนจอทีวี / Leaderboard (ไม่เกิน 16 ตัวอักษร)</label>
             <input class="name-input" id="inp-name" maxlength="16" placeholder="เช่น นนท์ เทคโนฯ" value="${this.profile.name}" />
+          </div>
+
+          <div class="form-row">
+            <label>เลือกตัวละครนักวิ่ง 3D (5 สไตล์ · ชาย / หญิง / ชุดอวกาศ)</label>
+            <div class="avatar-grid" id="avatar-grid">${avatarsHtml}</div>
           </div>
 
           <div class="form-row">
@@ -319,6 +338,16 @@ export class UI {
       });
     });
 
+    this.el['avatar-grid']?.querySelectorAll<HTMLButtonElement>('[data-avatar]').forEach((btn) => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const avId = sanitizeAvatarId(btn.dataset.avatar);
+        this.profile.avatar = avId;
+        this.el['avatar-grid'].querySelectorAll('.avatar-card').forEach((b) => b.classList.toggle('on', b === btn));
+        this.handlers.selectAvatar?.(avId);
+      });
+    });
+
     const tap = (id: string, fn: () => void) =>
       this.el[id]?.addEventListener('click', (ev) => {
         ev.stopPropagation();
@@ -452,10 +481,11 @@ export class UI {
       this.el['tv-lb-list'].innerHTML = snap.top10
         .map((r, i) => {
           const cIcon = r.activeCenter ? CENTERS[r.activeCenter].icon : '';
+          const avIcon = AVATARS[sanitizeAvatarId(r.avatar)].icon;
           return `<div class="tv-lb-row ${i === 0 ? 'top1' : ''}">
             <span class="tv-lb-rank">#${r.rank}</span>
             <span class="tv-lb-dot" style="background:${r.color}"></span>
-            <span class="tv-lb-name">${r.name} <small style="opacity:.7">(${ROLE_LABELS[r.role]})</small> ${cIcon}</span>
+            <span class="tv-lb-name">${avIcon} ${r.name} <small style="opacity:.7">(${ROLE_LABELS[r.role]})</small> ${cIcon}</span>
             <span class="tv-lb-score">${r.score.toLocaleString()}</span>
           </div>`;
         })
@@ -467,7 +497,7 @@ export class UI {
     if (this.el['tv-wait-list']) {
       this.el['tv-wait-list'].textContent =
         snap.waitingQueue.length > 0
-          ? snap.waitingQueue.map((p) => `${p.name} (${ROLE_LABELS[p.role]})`).join(' · ')
+          ? snap.waitingQueue.map((p) => `${AVATARS[sanitizeAvatarId(p.avatar)].icon} ${p.name} (${ROLE_LABELS[p.role]})`).join(' · ')
           : 'ยังไม่มีผู้เล่นในคิวรอ (สแกน QR เข้าร่วมได้ตลอดเวลา)';
     }
     if (this.el['tv-best-list']) {

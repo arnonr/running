@@ -12,6 +12,7 @@ import {
   speedAtProgress, stageIndexAtProgress, stageCenterAtProgress,
 } from './config';
 import { NetClient, AVATAR_COLORS, type PlayerProfile, type RoomSnapshot } from './net';
+import { sanitizeAvatarId, AVATARS } from './view/avatars';
 import type { SimEvent, CenterId } from './sim/types';
 
 const params = new URLSearchParams(location.search);
@@ -65,7 +66,10 @@ async function main() {
     name: 'นักวิ่ง Techno',
     role: 'senior',
     color: AVATAR_COLORS[0],
+    avatar: 'non',
   });
+  savedProfile.avatar = sanitizeAvatarId(savedProfile.avatar);
+  world.player.setAvatar(savedProfile.avatar);
 
   const net = new NetClient(isTvMode);
   let latestRoom: RoomSnapshot = net.getSnapshot();
@@ -99,9 +103,14 @@ async function main() {
       joinQueue: (prof) => {
         audio.unlock();
         audio.click();
-        save('profile', prof);
+        savedProfile.name = prof.name;
+        savedProfile.role = prof.role;
+        savedProfile.color = prof.color;
+        savedProfile.avatar = sanitizeAvatarId(prof.avatar);
+        save('profile', savedProfile);
+        world.player.setAvatar(savedProfile.avatar);
         soloRun = false;
-        net.join(prof);
+        net.join(savedProfile);
         const snap = net.getSnapshot();
         if (snap.phase === 'LOBBY') {
           ui.toast('✅ เข้าร่วมรอบนี้แล้ว! รอปล่อยตัวพร้อมจอทีวี...');
@@ -112,9 +121,27 @@ async function main() {
       playSoloNow: (prof) => {
         audio.unlock();
         audio.click();
-        save('profile', prof);
+        savedProfile.name = prof.name;
+        savedProfile.role = prof.role;
+        savedProfile.color = prof.color;
+        savedProfile.avatar = sanitizeAvatarId(prof.avatar);
+        save('profile', savedProfile);
+        world.player.setAvatar(savedProfile.avatar);
         soloRun = true;
         startMatchRun((Date.now() % 100000) + 1, DEFAULT_MATCH_DURATION);
+      },
+      selectAvatar: (avatarId) => {
+        audio.unlock();
+        audio.click();
+        savedProfile.avatar = sanitizeAvatarId(avatarId);
+        save('profile', savedProfile);
+        world.player.setAvatar(savedProfile.avatar);
+        world.player.warmUpAction('up');
+        const meta = AVATARS[savedProfile.avatar];
+        ui.toast(`${meta.icon} เลือกตัวละคร: ${meta.nameTh} (${meta.genderLabelTh})`, 1400);
+        if (!isTvMode) {
+          net.join(savedProfile);
+        }
       },
       resume: () => {
         if (state !== 'pause') return;
@@ -164,6 +191,7 @@ async function main() {
 
   function toLobby() {
     soloRun = false;
+    joinedMatchId = latestRoom.matchId;
     sim.reset(latestRoom.matchSeed, false, latestRoom.matchDuration);
     world.resetScenery();
     world.fx.clear();

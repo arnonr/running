@@ -5,6 +5,9 @@ import type { Sim } from '../sim/sim';
 import type { SimEvent, CenterId } from '../sim/types';
 import { PLAYER, JUMP_V, SUPER_JUMP_V, GRAVITY, laneX, CENTERS } from '../config';
 import { architecturalTowerSkinTexture, rocketHullSkinTexture } from './textures';
+import {
+  applyAvatarToCharacter, updateAvatarMotion, sanitizeAvatarId, type AvatarId,
+} from './avatars';
 
 type Clip = 'idle' | 'run' | 'jump' | 'jumpup' | 'fall' | 'roll' | 'die' | 'runlookback';
 
@@ -14,6 +17,7 @@ export class PlayerView {
   mixer: THREE.AnimationMixer;
   actions = {} as Record<Clip, THREE.AnimationAction>;
   current: Clip | null = null;
+  avatarId: AvatarId = 'non';
   attachments: Record<CenterId, THREE.Group> = {} as Record<CenterId, THREE.Group>;
   private auraRing: THREE.Mesh;
   private lean = 0;
@@ -304,6 +308,12 @@ export class PlayerView {
     }
   }
 
+  /** Switches the runner's 3D character avatar (mesh island filtering + UV outfit skin + bone-rigged 3D hair/skirt/helmet). */
+  setAvatar(avatarId: AvatarId) {
+    this.avatarId = sanitizeAvatarId(avatarId);
+    applyAvatarToCharacter(this.model, this.avatarId);
+  }
+
   /** Interactive Warm-Up in the Waiting Lobby: lets waiting players swipe Left/Right/Jump/Roll on their 3D character! */
   warmUpAction(action: 'left' | 'right' | 'up' | 'down') {
     if (action === 'left') this.lobbyLane = Math.max(0, this.lobbyLane - 1);
@@ -362,6 +372,7 @@ export class PlayerView {
     this.root.rotation.set(0, Math.sin(this.menuT * 0.4) * 0.25, 0);
     this.setCenterEffect(null, this.menuT);
     this.mixer.update(dt);
+    updateAvatarMotion(this.model, this.menuT, this.current === 'jump' || this.current === 'roll');
   }
 
   update(sim: Sim, dt: number, events: SimEvent[]) {
@@ -413,5 +424,6 @@ export class PlayerView {
 
     this.setCenterEffect(sim.activeCenter, sim.time);
     this.mixer.update(dt);
+    updateAvatarMotion(this.model, sim.time, sim.alive);
   }
 }
