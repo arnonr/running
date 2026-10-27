@@ -596,28 +596,56 @@ export function centerCapsuleTexture(centerId: CenterId) {
   return tex(c, false);
 }
 
-/** Floating 3D Nameplate for Ghost Runners on the shared track / TV Arena. */
+export const NAME_BADGE_CACHE_LIMIT = 64;
+const nameBadgeCache = new Map<string, THREE.CanvasTexture>();
+
+/** Floating 3D Nameplate for Ghost Runners on the shared track / TV Arena (cached with 64-entry LRU bound). */
 export function nameBadgeTexture(name: string, rank: number, color: string) {
+  const shortName = name.slice(0, 12);
+  const key = `${rank}:${shortName}:${color}`;
+  const hit = nameBadgeCache.get(key);
+  if (hit) {
+    nameBadgeCache.delete(key);
+    nameBadgeCache.set(key, hit);
+    return hit;
+  }
+
   const W = 256, H = 64;
-  const { c, g } = canvas(W, H);
-  g.fillStyle = 'rgba(15, 23, 42, 0.86)';
-  round(g, 4, 6, W - 8, H - 12, 24);
-  g.fill();
-  g.lineWidth = 4;
-  g.strokeStyle = color;
-  round(g, 4, 6, W - 8, H - 12, 24);
-  g.stroke();
+  let created: THREE.CanvasTexture;
+  if (typeof document === 'undefined') {
+    created = new THREE.CanvasTexture({ width: W, height: H } as unknown as HTMLCanvasElement);
+  } else {
+    const { c, g } = canvas(W, H);
+    g.fillStyle = 'rgba(15, 23, 42, 0.86)';
+    round(g, 4, 6, W - 8, H - 12, 24);
+    g.fill();
+    g.lineWidth = 4;
+    g.strokeStyle = color;
+    round(g, 4, 6, W - 8, H - 12, 24);
+    g.stroke();
 
-  g.fillStyle = color;
-  g.font = 'bold 24px system-ui, sans-serif';
-  g.textAlign = 'left';
-  g.textBaseline = 'middle';
-  g.fillText(`#${rank}`, 20, H / 2);
+    g.fillStyle = color;
+    g.font = 'bold 24px system-ui, sans-serif';
+    g.textAlign = 'left';
+    g.textBaseline = 'middle';
+    g.fillText(`#${rank}`, 20, H / 2);
 
-  g.fillStyle = '#ffffff';
-  g.font = 'bold 22px system-ui, sans-serif';
-  g.fillText(name.slice(0, 12), 70, H / 2);
-  return tex(c, false);
+    g.fillStyle = '#ffffff';
+    g.font = 'bold 22px system-ui, sans-serif';
+    g.fillText(shortName, 70, H / 2);
+    created = tex(c, false);
+  }
+
+  if (nameBadgeCache.size >= NAME_BADGE_CACHE_LIMIT) {
+    const oldestKey = nameBadgeCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      const oldTex = nameBadgeCache.get(oldestKey);
+      oldTex?.dispose();
+      nameBadgeCache.delete(oldestKey);
+    }
+  }
+  nameBadgeCache.set(key, created);
+  return created;
 }
 
 export function rampTexture() {

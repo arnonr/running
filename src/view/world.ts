@@ -57,6 +57,7 @@ export const SCENERY_POOL_LIMITS = {
 
 interface GhostSlot {
   group: THREE.Group;
+  runnerId: string;
   charClone: THREE.Object3D;
   avatar: AvatarId;
   mixer: THREE.AnimationMixer;
@@ -1140,6 +1141,7 @@ export class World {
       scene.add(group);
       this.ghostSlots.push({
         group,
+        runnerId: '',
         charClone,
         avatar: 'non',
         mixer,
@@ -1546,9 +1548,41 @@ export class World {
       ? []
       : ghosts.filter((g) => tvMode || g.id !== localPlayerId).slice(0, this.ghostSlots.length);
 
+    if (others.length === 0) {
+      for (const slot of this.ghostSlots) {
+        slot.group.visible = false;
+        slot.runnerId = '';
+      }
+      return;
+    }
+
+    // Bind each active ghost runner stably by `g.id` so rank swaps never swap 3D character slots or rebuild avatars mid-race!
+    const byId = new Map<string, RunnerNetState>();
+    for (const g of others) byId.set(g.id, g);
+
+    const assigned = new Set<string>();
+    for (const slot of this.ghostSlots) {
+      if (slot.runnerId && byId.has(slot.runnerId)) {
+        assigned.add(slot.runnerId);
+      } else {
+        slot.runnerId = '';
+      }
+    }
+    for (const g of others) {
+      if (assigned.has(g.id)) continue;
+      const freeSlot = this.ghostSlots.find((s) => !s.runnerId);
+      if (freeSlot) {
+        freeSlot.runnerId = g.id;
+        freeSlot.x = g.x ?? laneX(g.lane);
+        freeSlot.y = g.y ?? 0;
+        freeSlot.z = -g.packOffsetZ - 2;
+        assigned.add(g.id);
+      }
+    }
+
     for (let i = 0; i < this.ghostSlots.length; i++) {
       const slot = this.ghostSlots[i];
-      const g = others[i];
+      const g = slot.runnerId ? byId.get(slot.runnerId) : undefined;
       if (!g) {
         slot.group.visible = false;
         continue;
@@ -1563,11 +1597,11 @@ export class World {
       updateAvatarMotion(slot.charClone, this.time + i * 0.37, true);
 
       const spreadX = ((i % 3) - 1) * 0.28;
-      const spreadZ = -i * 1.35;
+      const spreadZ = -i * 1.15;
       const targetX = (g.x ?? laneX(g.lane)) + spreadX;
       const targetY = g.y ?? 0;
       const targetZ = -g.packOffsetZ + spreadZ;
-      const k = Math.min(1, dt * 7);
+      const k = Math.min(1, dt * 9);
       slot.x += (targetX - slot.x) * k;
       slot.y += (targetY - slot.y) * k;
       slot.z += (targetZ - slot.z) * k;
@@ -1580,7 +1614,6 @@ export class World {
       if (slot.badgeKey !== badgeKey) {
         slot.badgeKey = badgeKey;
         const sm = slot.badge.material as THREE.SpriteMaterial;
-        if (sm.map) sm.map.dispose();
         sm.map = nameBadgeTexture(g.name, g.rank, col);
         sm.needsUpdate = true;
       }
@@ -1606,8 +1639,8 @@ export class World {
     }
     const target = sim.grounded ? sim.y : Math.max(sim.groundY, Math.min(sim.y, this.camY + 1.4));
     this.camY += (target - this.camY) * Math.min(1, dt * 5);
-    const dist = (tvMode ? 7.2 : 5.4) + portrait * 2.4;
-    const height = (tvMode ? 3.8 : 2.75) + portrait * 1.5;
+    const dist = (tvMode ? 6.8 : 5.4) + portrait * 2.4;
+    const height = (tvMode ? 5.6 : 2.75) + portrait * 1.5;
     const sx = tvMode ? sim.x * 0.35 : sim.x * 0.65;
     let ox = 0, oy = 0;
     if (this.shake > 0) {
@@ -1623,7 +1656,7 @@ export class World {
       cam.fov += (fov - cam.fov) * Math.min(1, dt * 3);
       cam.updateProjectionMatrix();
     }
-    cam.lookAt(tvMode ? 0 : sim.x * 0.8, this.camY + 1.25, -9);
+    cam.lookAt(tvMode ? 0 : sim.x * 0.8, this.camY + (tvMode ? 1.65 : 1.25), tvMode ? -11 : -9);
   }
 
   takeFlash() {

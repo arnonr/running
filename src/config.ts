@@ -278,3 +278,58 @@ export const CENTER_LIST: CenterMeta[] = [
   CENTERS[8],
   CENTERS[9],
 ];
+
+export interface TvClockState {
+  elapsed: number;
+  d: number;
+  speed: number;
+  floor: number;
+  progress01: number;
+  stageIndex: number;
+  stageCenter: CenterId;
+}
+
+/**
+ * Advances the TV Live Arena timeline smoothly at 60 FPS (`dt`) while gently correcting drift
+ * toward the 10 Hz (`100ms`) room snapshot (`phaseTimeLeft`), preventing 10 FPS track stepping.
+ */
+export function stepTvClock(
+  prevElapsed: number,
+  dt: number,
+  phase: string,
+  phaseTimeLeft: number,
+  matchDuration: number,
+): TvClockState {
+  if (phase !== 'RUNNING' || matchDuration <= 0) {
+    return {
+      elapsed: 0,
+      d: 0,
+      speed: 0,
+      floor: 1,
+      progress01: 0,
+      stageIndex: 0,
+      stageCenter: STAGE_CENTER_ORDER[0],
+    };
+  }
+
+  const targetElapsed = Math.max(0, Math.min(matchDuration, matchDuration - Math.max(0, phaseTimeLeft)));
+  let next = prevElapsed + Math.max(0, dt);
+  const diff = targetElapsed - next;
+  if (Math.abs(diff) > 1.5) {
+    next = targetElapsed;
+  } else {
+    next += diff * Math.min(1, Math.max(0, dt) * 6);
+  }
+
+  const elapsed = Math.max(0, Math.min(matchDuration, next));
+  const progress01 = elapsed / matchDuration;
+  return {
+    elapsed,
+    d: distanceAtTime(elapsed, matchDuration),
+    speed: speedAtProgress(progress01),
+    floor: floorAtProgress(progress01),
+    progress01,
+    stageIndex: stageIndexAtProgress(progress01),
+    stageCenter: stageCenterAtProgress(progress01),
+  };
+}

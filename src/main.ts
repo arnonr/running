@@ -9,7 +9,7 @@ import { UI, type Screen } from './ui';
 import { load, save } from './storage';
 import {
   SPEED, DEFAULT_MATCH_DURATION, VIEW_AHEAD, CENTERS,
-  speedAtProgress, stageIndexAtProgress, stageCenterAtProgress,
+  stepTvClock,
 } from './config';
 import { NetClient, AVATAR_COLORS, type PlayerProfile, type RoomSnapshot } from './net';
 import { sanitizeAvatarId, AVATARS } from './view/avatars';
@@ -77,6 +77,7 @@ async function main() {
   let soloRun = false;
   let state: Screen = 'start';
   let netPublishTimer = 0;
+  let tvElapsed = 0;
   const horned = new Set<number>();
 
   const resize = () => {
@@ -355,17 +356,24 @@ async function main() {
 
   function tick(dt: number, draw = true) {
     if (isTvMode) {
-      // TV Live Arena: lock camera & track to room referenceDistance without local player obstacle hits
+      // TV Live Arena: smoothly advance camera & track at 60 FPS with drift correction toward room snapshot
       sim.invincible = true;
+      const tv = stepTvClock(
+        tvElapsed,
+        dt,
+        latestRoom.phase,
+        latestRoom.phaseTimeLeft,
+        latestRoom.matchDuration,
+      );
+      tvElapsed = tv.elapsed;
       if (latestRoom.phase === 'RUNNING') {
-        const elapsed = Math.max(0, latestRoom.matchDuration - latestRoom.phaseTimeLeft);
         sim.matchDuration = latestRoom.matchDuration;
-        sim.time = elapsed;
-        sim.floor = latestRoom.currentFloor;
-        sim.stageIndex = stageIndexAtProgress(sim.progress01);
-        sim.stageCenter = stageCenterAtProgress(sim.progress01);
-        sim.d = latestRoom.referenceDistance;
-        sim.speed = speedAtProgress(sim.progress01);
+        sim.time = tv.elapsed;
+        sim.floor = tv.floor;
+        sim.stageIndex = tv.stageIndex;
+        sim.stageCenter = tv.stageCenter;
+        sim.d = tv.d;
+        sim.speed = tv.speed;
         sim.track.ensure(sim.d + VIEW_AHEAD);
         sim.recycle();
       } else {

@@ -478,18 +478,36 @@ export class UI {
       this.el['tv-active-count'].textContent = `${snap.activeRunners.length} คน`;
     }
     if (this.el['tv-lb-list']) {
-      this.el['tv-lb-list'].innerHTML = snap.top10
-        .map((r, i) => {
-          const cIcon = r.activeCenter ? CENTERS[r.activeCenter].icon : '';
-          const avIcon = AVATARS[sanitizeAvatarId(r.avatar)].icon;
-          return `<div class="tv-lb-row ${i === 0 ? 'top1' : ''}">
-            <span class="tv-lb-rank">#${r.rank}</span>
-            <span class="tv-lb-dot" style="background:${r.color}"></span>
-            <span class="tv-lb-name">${avIcon} ${r.name} <small style="opacity:.7">(${ROLE_LABELS[r.role]})</small> ${cIcon}</span>
-            <span class="tv-lb-score">${r.score.toLocaleString()}</span>
-          </div>`;
-        })
-        .join('');
+      const lbList = this.el['tv-lb-list'];
+      const rows = snap.top10;
+      while (lbList.children.length > rows.length) {
+        lbList.lastElementChild?.remove();
+      }
+      while (lbList.children.length < rows.length) {
+        const rowEl = document.createElement('div');
+        rowEl.className = 'tv-lb-row';
+        rowEl.innerHTML = `<span class="tv-lb-rank"></span><span class="tv-lb-dot"></span><span class="tv-lb-name"></span><span class="tv-lb-score"></span>`;
+        lbList.appendChild(rowEl);
+      }
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        const rowEl = lbList.children[i] as HTMLElement;
+        rowEl.classList.toggle('top1', i === 0);
+        const rankEl = rowEl.children[0] as HTMLElement;
+        const dotEl = rowEl.children[1] as HTMLElement;
+        const nameEl = rowEl.children[2] as HTMLElement;
+        const scoreEl = rowEl.children[3] as HTMLElement;
+        const rankText = `#${r.rank}`;
+        if (rankEl.textContent !== rankText) rankEl.textContent = rankText;
+        if (dotEl.style.background !== r.color) dotEl.style.background = r.color;
+        const cIcon = r.activeCenter ? CENTERS[r.activeCenter].icon : '';
+        const avIcon = AVATARS[sanitizeAvatarId(r.avatar)].icon;
+        const prefix = r.name.includes(avIcon) ? '' : `${avIcon} `;
+        const nameText = `${prefix}${r.name} (${ROLE_LABELS[r.role]}) ${cIcon}`.trim();
+        if (nameEl.textContent !== nameText) nameEl.textContent = nameText;
+        const scoreText = r.score.toLocaleString();
+        if (scoreEl.textContent !== scoreText) scoreEl.textContent = scoreText;
+      }
     }
     if (this.el['tv-wait-count']) {
       this.el['tv-wait-count'].textContent = `${snap.waitingQueue.length} คน`;
