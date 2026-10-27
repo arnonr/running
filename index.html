@@ -166,11 +166,46 @@ html, body {
 .hint, .toast {
   position: absolute; left: 50%; transform: translateX(-50%);
   background: var(--panel); border: 1px solid var(--line); padding: 8px 16px;
-  border-radius: 999px; font-weight: 800; opacity: 0; transition: opacity .2s; white-space: nowrap;
+  border-radius: 999px; font-weight: 800; opacity: 0; transition: opacity .2s;
+  max-width: 90vw; text-align: center;
 }
-.hint { bottom: calc(16% + env(safe-area-inset-bottom)); font-size: 14px; color: var(--gold); }
-.toast { top: 44%; font-size: clamp(16px, 4vw, 22px); color: #fff; }
+.hint { bottom: calc(130px + env(safe-area-inset-bottom)); font-size: 14px; color: var(--gold); }
+.toast { top: 40%; font-size: clamp(14px, 3.8vw, 20px); color: #fff; border-radius: 16px; }
 .hint.on, .toast.on { opacity: 1; }
+
+/* On-Screen Mobile Touch Controller Pad */
+.mobile-pad {
+  position: absolute; left: 50%; bottom: calc(12px + env(safe-area-inset-bottom));
+  transform: translateX(-50%); width: min(520px, 94vw);
+  display: flex; flex-direction: column; gap: 6px; pointer-events: auto;
+}
+.mp-hint {
+  font-size: 11.5px; font-weight: 800; color: #e2e8f0; text-align: center;
+  background: rgba(15, 23, 42, 0.85); border: 1px solid var(--line);
+  border-radius: 999px; padding: 4px 12px; align-self: center;
+}
+.mp-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
+}
+.mp-btn {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; height: 68px; border-radius: 16px;
+  border: 2px solid rgba(56, 189, 248, 0.55);
+  background: rgba(15, 23, 42, 0.88); color: #f8fafc;
+  box-shadow: 0 5px 0 rgba(15, 23, 42, 0.95), 0 8px 18px rgba(0, 0, 0, 0.45);
+  cursor: pointer; user-select: none; -webkit-user-select: none; touch-action: manipulation;
+}
+.mp-btn.mp-up { border-color: rgba(34, 197, 94, 0.7); background: rgba(20, 83, 45, 0.65); }
+.mp-btn.mp-down { border-color: rgba(250, 204, 21, 0.7); background: rgba(113, 63, 18, 0.65); }
+.mp-btn:active {
+  transform: translateY(3px) scale(0.97);
+  background: rgba(56, 189, 248, 0.35);
+  border-color: var(--gold);
+}
+.mp-ico { font-size: 22px; line-height: 1; color: var(--sky); }
+.mp-btn.mp-up .mp-ico { color: #4ade80; }
+.mp-btn.mp-down .mp-ico { color: var(--gold); }
+.mp-btn b { font-size: 12.5px; font-weight: 900; letter-spacing: .02em; }
 
 /* Screens */
 .screen {

@@ -53,6 +53,7 @@ export interface UIHandlers {
   joinQueue(profile: PlayerProfile): void;
   playSoloNow(profile: PlayerProfile): void;
   selectAvatar?(avatarId: AvatarId): void;
+  controlAction?(action: 'left' | 'right' | 'up' | 'down'): void;
   resume(): void;
   pause(): void;
   restart(): void;
@@ -168,6 +169,29 @@ export class UI {
 
         <div class="hint" id="hint"></div>
         <div class="toast" id="toast"></div>
+
+        <!-- On-Screen Mobile Touch Controller Pad -->
+        <div class="mobile-pad" id="mobile-pad">
+          <div class="mp-hint">🎮 กดปุ่มด้านล่าง หรือ ปัดหน้าจอ เพื่อบังคับตัวละครบนจอทีวี</div>
+          <div class="mp-grid">
+            <button type="button" class="mp-btn" data-act="left" aria-label="เลี้ยวซ้าย">
+              <span class="mp-ico">◀</span>
+              <b>ซ้าย</b>
+            </button>
+            <button type="button" class="mp-btn mp-up" data-act="up" aria-label="กระโดด">
+              <span class="mp-ico">▲</span>
+              <b>กระโดด</b>
+            </button>
+            <button type="button" class="mp-btn mp-down" data-act="down" aria-label="กลิ้งหลบ">
+              <span class="mp-ico">▼</span>
+              <b>กลิ้งหลบ</b>
+            </button>
+            <button type="button" class="mp-btn" data-act="right" aria-label="เลี้ยวขวา">
+              <span class="mp-ico">▶</span>
+              <b>ขวา</b>
+            </button>
+          </div>
+        </div>
       </div>
 
       <div class="flash" id="flash"></div>
@@ -211,8 +235,8 @@ export class UI {
             </div>
           </div>
 
-          <button class="big gold-btn" id="btn-join-sync">🏁 เข้าร่วมรอบถัดไปพร้อมจอทีวี</button>
-          <button class="big" id="btn-play-solo">⚡ เริ่มวิ่งทันที (3 นาที · ทดสอบเดี่ยว)</button>
+          <button class="big gold-btn" id="btn-join-sync">🏁 ลงสนามวิ่งพร้อมจอทีวีทันที!</button>
+          <button class="big" id="btn-play-solo">⚡ วิ่งฝึกซ้อมเดี่ยว (ไม่ซิงค์ทีวี)</button>
         </div>
       </section>
 
@@ -346,6 +370,18 @@ export class UI {
         this.profile.avatar = avId;
         this.el['avatar-grid'].querySelectorAll('.avatar-card').forEach((b) => b.classList.toggle('on', b === btn));
         this.handlers.selectAvatar?.(avId);
+      });
+    });
+
+    this.el['mobile-pad']?.querySelectorAll<HTMLButtonElement>('[data-act]').forEach((btn) => {
+      btn.addEventListener('pointerdown', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const act = btn.dataset.act as 'left' | 'right' | 'up' | 'down';
+        if (act) {
+          try { navigator.vibrate?.(10); } catch { /* ignore */ }
+          this.handlers.controlAction?.(act);
+        }
       });
     });
 

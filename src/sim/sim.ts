@@ -3,6 +3,7 @@ import {
   PLAYER, GRAVITY, JUMP_V, SUPER_JUMP_V, OB, laneX, speedAtProgress, MAGNET_RANGE, VIEW_AHEAD, LANE_COUNT,
   trainLength, moverFront, moverSpan, DEFAULT_MATCH_DURATION, POWER_DURATION, PICKUP_PULL_RANGE,
   floorAtProgress, zoneAtProgress, baseMultForFloor, stageIndexAtProgress, stageCenterAtProgress,
+  distanceAtTime,
 } from '../config';
 import type { Ob, Coin, CenterPickup, SimEvent, ObKind, Hint, CenterId, ZoneId } from './types';
 import { Track, type Spec } from './track';
@@ -294,6 +295,36 @@ export class Sim {
   start() {
     this.running = true;
     this.finished = false;
+  }
+
+  /**
+   * Synchronizes a newly-joined runner to the current elapsed time of an in-progress TV match,
+   * granting 2.0s of spawn invulnerability and clearing immediate obstacles right in front of the player.
+   */
+  syncToElapsed(elapsed: number) {
+    const safeElapsed = Math.max(0, Math.min(this.matchDuration - 1, elapsed));
+    this.time = safeElapsed;
+    this.d = distanceAtTime(safeElapsed, this.matchDuration);
+    const p01 = this.progress01;
+    this.floor = floorAtProgress(p01);
+    this.zoneId = zoneAtProgress(p01);
+    this.stageIndex = stageIndexAtProgress(p01);
+    this.stageCenter = stageCenterAtProgress(p01);
+    this.baseMult = baseMultForFloor(this.floor);
+    this.speed = speedAtProgress(p01);
+    this.invulnerableT = Math.max(this.invulnerableT, 2.5);
+    this.score = Math.round(this.d * 3.0);
+
+    if (!this.noSpawn) {
+      this.track.ensure(this.d + VIEW_AHEAD);
+    }
+    for (let i = this.obs.length - 1; i >= 0; i--) {
+      const o = this.obs[i];
+      if (o.d1 < this.d - 8 || (o.d1 >= this.d - 2 && o.d0 <= this.d + 14)) {
+        this.freeObs.push(o);
+        this.obs.splice(i, 1);
+      }
+    }
   }
   left() { this.changeLane(-1); }
   right() { this.changeLane(1); }

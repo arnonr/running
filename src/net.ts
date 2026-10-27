@@ -109,7 +109,7 @@ export class MatchRoomCore {
     { name: 'เมย์ Techno', score: 7690, role: 'junior' },
   ];
 
-  join(profile: PlayerProfile): { queuedForNextRound: boolean } {
+  join(profile: PlayerProfile, options?: { immediate?: boolean }): { queuedForNextRound: boolean } {
     const cleanAvatar = sanitizeAvatarId(profile.avatar);
     const cleanProfile: PlayerProfile = {
       ...profile,
@@ -119,9 +119,12 @@ export class MatchRoomCore {
       avatar: cleanAvatar,
     };
 
-    if (this.phase === 'LOBBY') {
+    const forceImmediate = !!options?.immediate;
+
+    if (this.phase === 'LOBBY' || forceImmediate) {
       this.waitingMap.delete(cleanProfile.id);
       const existing = this.activeMap.get(cleanProfile.id);
+      const joinMidRun = this.phase === 'RUNNING' && !existing;
       this.activeMap.set(cleanProfile.id, {
         id: cleanProfile.id,
         name: cleanProfile.name,
@@ -130,17 +133,20 @@ export class MatchRoomCore {
         avatar: cleanAvatar,
         lane: existing ? existing.lane : 1,
         x: existing ? existing.x : 0,
-        y: 0,
-        d: 0,
-        score: 0,
-        coins: 0,
-        floor: 1,
-        activeCenter: null,
-        collectedCount: 0,
-        rank: 1,
-        packOffsetZ: 0,
+        y: existing ? existing.y : 0,
+        d: joinMidRun ? this.referenceDistance : existing ? existing.d : 0,
+        score: joinMidRun ? Math.round(this.referenceDistance * 3.0) : existing ? existing.score : 0,
+        coins: existing ? existing.coins : 0,
+        floor: joinMidRun ? this.currentFloor : existing ? existing.floor : 1,
+        activeCenter: existing ? existing.activeCenter : null,
+        collectedCount: existing ? existing.collectedCount : 0,
+        rank: existing ? existing.rank : 1,
+        packOffsetZ: existing ? existing.packOffsetZ : 0,
         isBot: cleanProfile.isBot,
       });
+      if (forceImmediate && (this.phase === 'LOBBY' || this.phase === 'PODIUM')) {
+        this.hostCommand({ action: 'start_now' });
+      }
       return { queuedForNextRound: false };
     }
 
@@ -421,7 +427,7 @@ export class MatchRoomCore {
 }
 
 export type NetMessage =
-  | { type: 'join'; profile: PlayerProfile }
+  | { type: 'join'; profile: PlayerProfile; immediate?: boolean }
   | { type: 'state'; id: string; state: Partial<RunnerNetState> }
   | { type: 'host'; command: HostCommand }
   | { type: 'request_sync' }
@@ -528,7 +534,7 @@ export class NetClient {
     }
     // Apply joins, runner states, and host commands to our local room
     if (msg.type === 'join') {
-      this.localRoom.join(msg.profile);
+      this.localRoom.join(msg.profile, { immediate: msg.immediate });
     } else if (msg.type === 'state') {
       this.localRoom.updateRunnerState(msg.id, msg.state);
     } else if (msg.type === 'host') {
@@ -573,13 +579,13 @@ export class NetClient {
     return this.latestSnapshot;
   }
 
-  join(profile: PlayerProfile) {
+  join(profile: PlayerProfile, options?: { immediate?: boolean }) {
     this.lastJoinedProfile = profile;
-    const msg: NetMessage = { type: 'join', profile };
+    const msg: NetMessage = { type: 'join', profile, immediate: options?.immediate };
     if (this.wsConnected && this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
     } else {
-      this.localRoom.join(profile);
+      this.localRoom.join(profile, options);
       if (this.isAuthorityTab || Date.now() - this.lastAuthoritySnapshotAt >= 1200) {
         this.latestSnapshot = this.localRoom.getSnapshot();
       }

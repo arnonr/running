@@ -40,7 +40,7 @@ wss.on('connection', (ws) => {
       const msg = JSON.parse(String(raw)) as NetMessage;
       if (msg.type === 'join') {
         clientPlayerIds.set(ws, msg.profile.id);
-        room.join(msg.profile);
+        room.join(msg.profile, { immediate: msg.immediate });
         broadcastSnapshot();
       } else if (msg.type === 'state') {
         room.updateRunnerState(msg.id, msg.state);

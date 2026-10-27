@@ -111,13 +111,23 @@ async function main() {
         save('profile', savedProfile);
         world.player.setAvatar(savedProfile.avatar);
         soloRun = false;
-        net.join(savedProfile);
+        net.join(savedProfile, { immediate: true });
         const snap = net.getSnapshot();
-        if (snap.phase === 'LOBBY') {
-          ui.toast('✅ เข้าร่วมรอบนี้แล้ว! รอปล่อยตัวพร้อมจอทีวี...');
+        if (snap.phase === 'RUNNING') {
+          joinedMatchId = snap.matchId;
+          const elapsed = Math.max(0, snap.matchDuration - snap.phaseTimeLeft);
+          startMatchRun(snap.matchSeed, snap.matchDuration, elapsed);
+          ui.toast('🏁 ลงสนามร่วมวิ่งกับจอทีวีแล้ว! กดปุ่ม ซ้าย/กระโดด/กลิ้ง/ขวา ด้านล่างได้เลย!');
         } else {
-          ui.toast(`⏳ รอบปัจจุบันกำลังวิ่ง! ลงทะเบียนเข้าคิวรอบถัดไป (#${snap.matchId + 1}) เรียบร้อย!`);
+          state = 'countdown';
+          ui.show('countdown');
+          ui.setCountdown(3);
+          audio.countdownBeep(false);
         }
+      },
+      controlAction: (act) => {
+        audio.unlock();
+        onAction(act);
       },
       playSoloNow: (prof) => {
         audio.unlock();
@@ -201,12 +211,15 @@ async function main() {
     ui.show('start');
   }
 
-  function startMatchRun(seed: number, duration: number) {
+  function startMatchRun(seed: number, duration: number, initialElapsed = 0) {
     sim.reset(seed, false, duration);
     world.resetScenery();
     world.fx.clear();
     state = 'play';
     sim.start();
+    if (initialElapsed > 0) {
+      sim.syncToElapsed(initialElapsed);
+    }
     audio.startMusic();
     ui.show('play');
   }
