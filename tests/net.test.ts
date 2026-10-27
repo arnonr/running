@@ -46,4 +46,26 @@ describe('MatchRoomCore: Synchronized Rounds, Waiting Queue & Hybrid Controls', 
     expect(snapNext.activeRunners.some((r) => r.id === 'p3')).toBe(true);
     expect(snapNext.waitingQueue).toHaveLength(0);
   });
+
+  it('supports adding, removing, and clearing bots on-demand via HostCommand', () => {
+    const room = new MatchRoomCore();
+    room.addDemoBots(4);
+    expect(room.getSnapshot().activeRunners).toHaveLength(4);
+
+    // Add 1 bot -> 5 bots
+    room.hostCommand({ action: 'add_bots', count: 1 });
+    expect(room.getSnapshot().activeRunners).toHaveLength(5);
+
+    // Remove 1 bot -> 4 bots
+    room.hostCommand({ action: 'remove_bots', count: 1 });
+    expect(room.getSnapshot().activeRunners).toHaveLength(4);
+
+    // Clear all bots -> 0 bots (while keeping human players intact)
+    room.join({ id: 'human-1', name: 'นนท์', role: 'senior', color: '#38bdf8' });
+    expect(room.getSnapshot().activeRunners).toHaveLength(5);
+    room.hostCommand({ action: 'clear_bots' });
+    const afterClear = room.getSnapshot().activeRunners;
+    expect(afterClear).toHaveLength(1);
+    expect(afterClear[0].id).toBe('human-1');
+  });
 });

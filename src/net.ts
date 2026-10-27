@@ -72,6 +72,8 @@ export type HostCommand =
   | { action: 'toggle_hold' }
   | { action: 'set_duration'; duration: number }
   | { action: 'add_bots'; count?: number }
+  | { action: 'remove_bots'; count?: number }
+  | { action: 'clear_bots' }
   | { action: 'force_lobby' };
 
 /** Strip HTML tags, control chars, and clamp nickname to 1..16 chars. */
@@ -90,6 +92,11 @@ const BOT_PRESETS: Array<{ name: string; role: PlayerRole; color: string; avatar
   { name: 'ดร.พราว 🧬', role: 'uni', color: '#22c55e', avatar: 'praw' },
   { name: 'พี่คินวิศวะ 🤖', role: 'uni', color: '#f59e0b', avatar: 'kin' },
   { name: 'กัปตันสกาย 🚀', role: 'public', color: '#a855f7', avatar: 'sky' },
+  { name: 'เทอร์โบ นนท์ 💨', role: 'senior', color: '#fb7185', avatar: 'non' },
+  { name: 'เมย์ สปีด 🌟', role: 'junior', color: '#38bdf8', avatar: 'may' },
+  { name: 'ศ.ดร.พราว 🔬', role: 'uni', color: '#f59e0b', avatar: 'praw' },
+  { name: 'ช่างคิน เมคคา ⚙️', role: 'uni', color: '#22c55e', avatar: 'kin' },
+  { name: 'ผู้การสกาย 🛰️', role: 'public', color: '#ec4899', avatar: 'sky' },
 ];
 
 export class MatchRoomCore {
@@ -194,18 +201,51 @@ export class MatchRoomCore {
   }
 
   addDemoBots(count = 4) {
-    for (let i = 0; i < count; i++) {
-      const preset = BOT_PRESETS[i % BOT_PRESETS.length];
+    let added = 0;
+    for (let i = 0; i < BOT_PRESETS.length && added < count; i++) {
       const id = `bot-${i + 1}`;
+      if (this.activeMap.has(id) || this.waitingMap.has(id)) continue;
+      const preset = BOT_PRESETS[i % BOT_PRESETS.length];
       this.botSeeds.set(id, i + 1);
-      this.join({
-        id,
-        name: preset.name,
-        role: preset.role,
-        color: preset.color,
-        avatar: preset.avatar,
-        isBot: true,
-      });
+      this.join(
+        {
+          id,
+          name: preset.name,
+          role: preset.role,
+          color: preset.color,
+          avatar: preset.avatar,
+          isBot: true,
+        },
+        { immediate: true },
+      );
+      added++;
+    }
+  }
+
+  removeDemoBots(count = 1) {
+    const botIds: string[] = [];
+    for (const [id, r] of this.activeMap.entries()) {
+      if (r.isBot || id.startsWith('bot-')) botIds.push(id);
+    }
+    for (const [id, p] of this.waitingMap.entries()) {
+      if (p.isBot || id.startsWith('bot-')) botIds.push(id);
+    }
+    botIds.sort((a, b) => {
+      const na = parseInt(a.replace('bot-', ''), 10) || 0;
+      const nb = parseInt(b.replace('bot-', ''), 10) || 0;
+      return nb - na;
+    });
+    for (let i = 0; i < count && i < botIds.length; i++) {
+      this.leave(botIds[i]);
+    }
+  }
+
+  clearDemoBots() {
+    for (const [id, r] of Array.from(this.activeMap.entries())) {
+      if (r.isBot || id.startsWith('bot-')) this.leave(id);
+    }
+    for (const [id, p] of Array.from(this.waitingMap.entries())) {
+      if (p.isBot || id.startsWith('bot-')) this.leave(id);
     }
   }
 
@@ -238,7 +278,15 @@ export class MatchRoomCore {
         break;
       }
       case 'add_bots': {
-        this.addDemoBots(cmd.count ?? 4);
+        this.addDemoBots(cmd.count ?? 1);
+        break;
+      }
+      case 'remove_bots': {
+        this.removeDemoBots(cmd.count ?? 1);
+        break;
+      }
+      case 'clear_bots': {
+        this.clearDemoBots();
         break;
       }
       case 'force_lobby': {

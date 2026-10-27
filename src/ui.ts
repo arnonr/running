@@ -309,10 +309,16 @@ export class UI {
               <div class="tv-host-btns">
                 <button class="tv-btn primary" id="tv-btn-start">🚀 เริ่มปล่อยตัวรอบนี้ / เริ่มใหม่ (Admin Start)</button>
                 <button class="tv-btn danger" id="tv-btn-stop" style="grid-column:span 2;background:rgba(225,29,72,.28);border-color:#fb7185;color:#fecdd3">🛑 หยุดรอบกลางคัน / รีเซ็ตกลับล็อบบี้ (Stop & Reset)</button>
-                <button class="tv-btn" id="tv-btn-bots">🤖 เพิ่มบอทร่วมวิ่ง</button>
-                <button class="tv-btn" id="tv-btn-dur180">⏱️ 3 นาที (180s)</button>
-                <button class="tv-btn" id="tv-btn-dur120">⏱️ 2 นาที (120s)</button>
-                <button class="tv-btn" id="tv-btn-dur90">⏱️ 1.5 นาที (90s)</button>
+                <div style="grid-column:span 2;display:grid;grid-template-columns:1fr 1fr 1.15fr;gap:6px">
+                  <button class="tv-btn" id="tv-btn-bots" style="background:rgba(34,197,94,.2);border-color:#4ade80;color:#bbf7d0">➕ เพิ่มบอท</button>
+                  <button class="tv-btn" id="tv-btn-bot-remove" style="background:rgba(245,158,11,.2);border-color:#fbbf24;color:#fde68a">➖ ลดบอท</button>
+                  <button class="tv-btn" id="tv-btn-bot-clear" style="background:rgba(148,163,184,.18);border-color:#94a3b8;color:#e2e8f0">🤖 ล้างบอท (0)</button>
+                </div>
+                <div style="grid-column:span 2;display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
+                  <button class="tv-btn" id="tv-btn-dur180">⏱️ 3 นาที (180s)</button>
+                  <button class="tv-btn" id="tv-btn-dur120">⏱️ 2 นาที (120s)</button>
+                  <button class="tv-btn" id="tv-btn-dur90">⏱️ 1.5 นาที (90s)</button>
+                </div>
               </div>
             </div>
           </div>
@@ -411,7 +417,9 @@ export class UI {
     // TV Host Controls
     tap('tv-btn-start', () => this.handlers.hostCommand({ action: 'start_now' }));
     tap('tv-btn-stop', () => this.handlers.hostCommand({ action: 'force_lobby' }));
-    tap('tv-btn-bots', () => this.handlers.hostCommand({ action: 'add_bots', count: 4 }));
+    tap('tv-btn-bots', () => this.handlers.hostCommand({ action: 'add_bots', count: 1 }));
+    tap('tv-btn-bot-remove', () => this.handlers.hostCommand({ action: 'remove_bots', count: 1 }));
+    tap('tv-btn-bot-clear', () => this.handlers.hostCommand({ action: 'clear_bots' }));
     tap('tv-btn-dur180', () => this.handlers.hostCommand({ action: 'set_duration', duration: 180 }));
     tap('tv-btn-dur120', () => this.handlers.hostCommand({ action: 'set_duration', duration: 120 }));
     tap('tv-btn-dur90', () => this.handlers.hostCommand({ action: 'set_duration', duration: 90 }));
@@ -519,7 +527,9 @@ export class UI {
       this.el['tv-timer'].textContent = snap.phase === 'LOBBY' ? 'READY' : this.formatMMSS(snap.phaseTimeLeft);
     }
     if (this.el['tv-active-count']) {
-      this.el['tv-active-count'].textContent = `${snap.activeRunners.length} คน`;
+      const botCount = snap.activeRunners.filter((r) => r.isBot).length;
+      const humanCount = snap.activeRunners.length - botCount;
+      this.el['tv-active-count'].textContent = `${snap.activeRunners.length} คน (ผู้เล่น ${humanCount} · บอท ${botCount})`;
     }
     if (this.el['tv-lb-list']) {
       const lbList = this.el['tv-lb-list'];
