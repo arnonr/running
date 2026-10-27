@@ -48,6 +48,17 @@ describe('LAN Mobile Join URL & Real QR Code SVG', () => {
       '192.168.3.5',
     );
     expect(prodUrl).toBe('https://techno-surfers.sut.ac.th/game/');
+
+    const kmutnbSubpath = resolveMobileJoinUrl(
+      {
+        protocol: 'http:',
+        hostname: 'it.technopark.kmutnb.ac.th',
+        port: '',
+        pathname: '/technosurfers',
+      },
+      '192.168.3.5',
+    );
+    expect(kmutnbSubpath).toBe('http://it.technopark.kmutnb.ac.th/technosurfers/');
   });
 
   it('generates a real, deterministic QR Code SVG whose matrix changes with the URL', () => {

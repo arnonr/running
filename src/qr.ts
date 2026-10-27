@@ -32,7 +32,10 @@ export function resolveMobileJoinUrl(
     loc.hostname === '[::1]';
   const host = isLocalhost && fallbackLanIp ? fallbackLanIp : loc.hostname || 'localhost';
   const portPart = loc.port ? `:${loc.port}` : '';
-  const pathPart = loc.pathname || '/';
+  let pathPart = loc.pathname || '/';
+  if (!pathPart.endsWith('/') && !pathPart.endsWith('.html')) {
+    pathPart += '/';
+  }
   return `${loc.protocol}//${host}${portPart}${pathPart}`;
 }
 

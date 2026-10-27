@@ -26,9 +26,21 @@ const MIME_TYPES: Record<string, string> = {
 
 const httpServer = createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  const rawUrl = (req.url || '/').split('?')[0];
+  const fullUrl = req.url || '/';
+  const [rawPath, queryString] = fullUrl.split('?');
 
-  if (rawUrl === '/health' || rawUrl === '/status') {
+  // If accessed at `/technosurfers` without trailing slash, redirect to `/technosurfers/` so relative assets (`./assets/...`) resolve under `/technosurfers/`
+  if (rawPath === '/technosurfers') {
+    const qs = queryString ? `?${queryString}` : '';
+    res.writeHead(302, { Location: `/technosurfers/${qs}` });
+    res.end();
+    return;
+  }
+
+  // Support both root (`/`) and subpath (`/technosurfers/...`) requests seamlessly
+  const strippedPath = rawPath.replace(/^\/technosurfers(?=\/|$)/, '') || '/';
+
+  if (strippedPath === '/health' || strippedPath === '/status') {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(room.getSnapshot()));
     return;
@@ -36,7 +48,7 @@ const httpServer = createServer(async (req, res) => {
 
   // Serve built production frontend from ./dist if present
   try {
-    const safePath = rawUrl === '/' ? '/index.html' : rawUrl;
+    const safePath = strippedPath === '/' ? '/index.html' : strippedPath;
     const candidate = resolve(DIST_DIR, '.' + safePath);
     if (candidate.startsWith(DIST_DIR)) {
       const info = await stat(candidate);

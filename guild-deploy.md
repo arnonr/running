@@ -1,33 +1,34 @@
 # 🚀 คู่มือการติดตั้งระบบขึ้น Ubuntu Server (Step-by-Step Deployment Guide)
+**สำหรับ URL: `http://it.technopark.kmutnb.ac.th/technosurfers/` (ผ่าน Nginx Proxy Manager)**
 
-เอกสารนี้อธิบายขั้นตอนการนำเกม **TECHNO SURFERS 3D: 10 Floors to Space** ขึ้นรันบน **Ubuntu Server (20.04 / 22.04 / 24.04 LTS)** แบบครบวงจร
+เอกสารนี้อธิบายขั้นตอนการนำเกม **TECHNO SURFERS 3D: 10 Floors to Space** ขึ้นรันบน **Ubuntu Server** และผูกเข้ากับ **Nginx Proxy Manager (NPM)** ที่คุณมีอยู่แล้วภายใต้ Path `/technosurfers` แบบครบวงจร
 
-> 💡 **ข้อดีของการรันบน Ubuntu Server จริง:**
-> - เซิร์ฟเวอร์ตัวเดียว (`server/index.ts`) ทำหน้าที่เสิร์ฟทั้ง **หน้าเว็บเกม 3D (`dist/`)** และ **WebSocket ซิงก์ข้อมูลเรียลไทม์ (`/ws`)** ในพอร์ตเดียวกัน (`8787`)
-> - **มือถือผู้เล่นไม่จำเป็นต้องต่อ Wi-Fi วงเดียวกับจอ TV อีกต่อไป!** ผู้เข้าชมงานสามารถใช้เน็ตมือถือ **4G / 5G** สแกน QR Code บนจอ TV แล้วเข้ามาวิ่งพร้อมกันบนจอ TV ได้ทันที
+> 💡 **ความพิเศษที่ตั้งค่าไว้ในโค้ดให้เรียบร้อยแล้ว:**
+> - ตัว Node Server (`server/index.ts` พอร์ต `8787`) รองรับทั้งการเรียกผ่าน Root (`/`) และผ่าน Subpath (`/technosurfers/...`) โดยอัตโนมัติ
+> - ระบบแปลงลิงก์ `/technosurfers` เป็น `/technosurfers/` ให้อัตโนมัติเพื่อให้ไฟล์โมเดล 3D (`assets/core.glb`) โหลดได้ไม่หลุด Path
+> - ระบบ WebSocket (`/technosurfers/ws`) และ **QR Code บนจอ TV** จะเปลี่ยนเป็น `http://it.technopark.kmutnb.ac.th/technosurfers/` โดยอัตโนมัติ
+> - **ผู้เล่นสแกน QR Code ด้วยเน็ตมือถือ 4G / 5G จากค่ายไหนก็ได้** ไม่จำเป็นต้องต่อ Wi-Fi วงเดียวกับจอ TV อีกต่อไป!
 
 ---
 
 ## ขั้นตอนที่ 1: เตรียมเครื่อง Ubuntu Server (ติดตั้ง Node.js 20 LTS, Git และ PM2)
 
-SSH เข้าไปที่เครื่อง Ubuntu Server แล้วรันคำสั่งต่อไปนี้ทีละบรรทัด:
+SSH เข้าไปที่เครื่อง Ubuntu Server แล้วรันคำสั่งต่อไปนี้ (ข้ามตัวที่มีในเครื่องแล้วได้):
 
 ```bash
-# 1. อัปเดตแพ็กเกจของ Ubuntu
-sudo apt update && sudo apt upgrade -y
+# 1. อัปเดตแพ็กเกจและติดตั้ง Git
+sudo apt update
+sudo apt install -y curl git build-essential
 
-# 2. ติดตั้งเครื่องมือพื้นฐานและ Git
-sudo apt install -y curl git build-essential ufw
-
-# 3. ติดตั้ง Node.js 20 LTS (ผ่าน NodeSource)
+# 2. ติดตั้ง Node.js 20 LTS (หากยังไม่มี Node 18/20+)
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt install -y nodejs
 
-# 4. ตรวจสอบเวอร์ชัน Node และ npm (ควรได้ Node v20.x ขึ้นไป)
+# 3. ตรวจสอบเวอร์ชัน Node และ npm
 node -v
 npm -v
 
-# 5. ติดตั้ง PM2 สำหรับคุมให้เซิร์ฟเวอร์ทำงานเบื้องหลังตลอด 24 ชม.
+# 4. ติดตั้ง PM2 สำหรับคุมให้เซิร์ฟเวอร์ทำงานเบื้องหลังตลอด 24 ชม.
 sudo npm install -g pm2
 ```
 
@@ -54,9 +55,7 @@ npm run build
 
 ---
 
-## ขั้นตอนที่ 3: รันเซิร์ฟเวอร์ด้วย PM2 (ทำงานตลอดเวลา + เปิดเองเมื่อ Server Reboot)
-
-ตัวไฟล์ `server/index.ts` จะทำหน้าที่เปิดทั้ง **เว็บหน้าบ้าน (`dist/`)** และ **WebSocket Server (`/ws`)** ที่พอร์ต `8787` พร้อมกันในโปรเซสเดียว:
+## ขั้นตอนที่ 3: รันเซิร์ฟเวอร์ด้วย PM2 ที่พอร์ต `8787`
 
 ```bash
 # 1. สั่งรันเซิร์ฟเวอร์ผ่าน PM2 ตั้งชื่อว่า "techno-runner"
@@ -64,117 +63,73 @@ PORT=8787 pm2 start npm --name "techno-runner" -- run server
 
 # 2. ตรวจสอบสถานะว่าขึ้นคำว่า "online"
 pm2 status
-pm2 logs techno-runner --lines 20
 
 # 3. บันทึกให้ PM2 เปิดกลับมาทำงานเองอัตโนมัติเวลาเครื่อง Ubuntu รีบูต
 pm2 save
 pm2 startup
-# (หมายเหตุ: หากคำสั่ง pm2 startup แสดงบรรทัดที่ขึ้นต้นด้วย sudo env PATH=... ให้ก๊อปปี้บรรทัดนั้นมารันต่อ עוד 1 ครั้ง แล้วพิมพ์ pm2 save อีกที)
 ```
 
-ทดสอบว่าเซิร์ฟเวอร์ทำงานปกติด้วยคำสั่ง:
+ทดสอบว่าเซิร์ฟเวอร์ทำงานปกติบนเครื่อง Ubuntu ด้วยคำสั่ง:
 ```bash
-curl http://localhost:8787/health
+curl http://127.0.0.1:8787/technosurfers/health
 ```
-*(ถ้าสำเร็จ จะเห็นข้อมูล JSON สถานะห้องแข่งขันตอบกลับมา)*
+*(ถ้าสำเร็จ จะเห็นข้อมูล JSON ของห้องแข่งขันตอบกลับมาทันที)*
 
 ---
 
-## ขั้นตอนที่ 4: เปิดให้เข้าใช้งานจากภายนอก (เลือกแบบ A หรือ แบบ B)
+## ขั้นตอนที่ 4: ตั้งค่าใน Nginx Proxy Manager (สำหรับ `/technosurfers`)
 
-### แบบที่ A: เข้าผ่าน IP Server โดยตรง (ง่ายและเร็วที่สุด ไม่ต้องมีโดเมน)
-หากต้องการเข้าผ่าน `http://<IP-ของ-Server>:8787` เลย เพียงเปิดพอร์ต `8787` บน Firewall:
+เปิดหน้าเว็บ **Nginx Proxy Manager Admin UI** (ปกติพอร์ต `:81`) แล้วทำตามนี้ครับ:
 
-```bash
-sudo ufw allow OpenSSH
-sudo ufw allow 8787/tcp
-sudo ufw enable
-```
-เสร็จแล้วเปิดใช้งานได้ทันทีที่:
-- **หน้าจอ TV:** `http://<IP-ของ-Server>:8787/?mode=tv`
-- **หน้าจอมือถือ (สร้างใน QR อัตโนมัติ):** `http://<IP-ของ-Server>:8787/`
-
----
-
-### แบบที่ B: เข้าผ่านชื่อโดเมนมาตรฐาน + HTTPS (Nginx Reverse Proxy + SSL ฟรี)
-แนะนำสำหรับงานจริงที่ต้องการลิงก์สวยๆ (เช่น `https://run.yourdomain.com`) โดยไม่ต้องพิมพ์เลขพอร์ต `:8787`
-
-#### 4.1 ติดตั้ง Nginx
-```bash
-sudo apt install -y nginx
-sudo ufw allow OpenSSH
-sudo ufw allow 'Nginx Full'
-sudo ufw enable
-```
-
-#### 4.2 สร้างไฟล์ตั้งค่า Nginx
-```bash
-sudo nano /etc/nginx/sites-available/techno-runner
-```
-วางโค้ดด้านล่างลงไป *(เปลี่ยน `run.yourdomain.com` เป็นชื่อโดเมนหรือ IP ของคุณ)*:
+1. ไปที่เมนู **Hosts** → **Proxy Hosts**
+2. คลิกปุ่มจุด 3 จุดท้ายโดเมน **`it.technopark.kmutnb.ac.th`** แล้วเลือก **Edit**
+3. ในแท็บแรก (**Details**):
+   - เปิดสวิตช์ **Websockets Support** ให้เป็น **ON (สีเขียว)** *(สำคัญมากสำหรับการซิงก์มือถือกับจอ TV)*
+4. ไปที่แท็บ **Advanced** (แนะนำวิธีนี้ชัวร์ที่สุดสำหรับ Subpath + WebSocket) แล้ววางโค้ดด้านล่างลงในช่อง **Custom Nginx Configuration**:
 
 ```nginx
-server {
-    listen 80;
-    server_name run.yourdomain.com;
+# เปลี่ยน /technosurfers (ไม่มี /) ให้มี / ปิดท้ายอัตโนมัติ
+location = /technosurfers {
+    return 302 $scheme://$http_host/technosurfers/$is_args$args;
+}
 
-    # เปิด TCP_NODELAY เพื่อลดความหน่วง (Latency) ระหว่างมือถือและจอ TV สูงสุด
+# ส่งต่อทั้งหน้าเว็บ 3D และ WebSocket (/technosurfers/ws) ไปยังพอร์ต 8787
+location ^~ /technosurfers/ {
+    proxy_pass http://127.0.0.1:8787/technosurfers/;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "Upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 86400s;
+    proxy_send_timeout 86400s;
+    proxy_buffering off;
     tcp_nodelay on;
-
-    # ส่งต่อ WebSocket (/ws) ไปยัง Node Server พอร์ต 8787
-    location /ws {
-        proxy_pass http://127.0.0.1:8787;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "Upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_read_timeout 86400s;
-        proxy_send_timeout 86400s;
-        proxy_buffering off;
-    }
-
-    # ส่งต่อหน้าเว็บและไฟล์ 3D ทั้งหมดไปยัง Node Server พอร์ต 8787
-    location / {
-        proxy_pass http://127.0.0.1:8787;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
 }
 ```
 
-บันทึกไฟล์ (`Ctrl+O` → `Enter` → `Ctrl+X`) แล้วเปิดใช้งานไซต์:
+> ⚠️ **หมายเหตุกรณี Nginx Proxy Manager รันอยู่ใน Docker Container:**
+> - หาก Nginx Proxy Manager รันอยู่ใน Docker คนละ Container กับตัวเกม ให้เปลี่ยน `127.0.0.1:8787` ในบรรทัด `proxy_pass` เป็น **IP ภายในของเครื่อง Ubuntu Server** (เช่น `http://172.17.0.1:8787/technosurfers/` หรือ `http://192.168.x.x:8787/technosurfers/`)
+> - เช็ค IP ของเครื่อง Ubuntu ได้ด้วยคำสั่ง `hostname -I | awk '{print $1}'`
 
-```bash
-sudo ln -s /etc/nginx/sites-available/techno-runner /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-#### 4.3 (ถ้ามีโดเมน) ติดตั้ง SSL (`https://` และ `wss://`) ฟรีด้วย Certbot
-```bash
-sudo apt install -y certbot python3-certbot-nginx
-sudo certbot --nginx -d run.yourdomain.com
-```
+5. กดปุ่ม **Save** เป็นอันเสร็จสมบูรณ์!
 
 ---
 
-## ขั้นตอนที่ 5: วิธีเปิดใช้งานหน้างานจริง
+## ขั้นตอนที่ 5: ลิงก์เปิดใช้งานวันงานจริง
 
-1. **บนคอมพิวเตอร์ที่ต่อออกจอ TV กลางบูธ:**
-   - เปิดเบราว์เซอร์ Chrome กด `F11` (Full Screen) แล้วเข้าลิงก์:
-     - `https://run.yourdomain.com/?mode=tv` *(หรือ `http://<IP-ของ-Server>:8787/?mode=tv`)*
-   - **QR Code มุมซ้ายบนของจอ TV** จะสร้างลิงก์ตามชื่อโดเมน/IP ของ Server ให้โดยอัตโนมัติ!
-2. **บนมือถือของผู้ร่วมงาน:**
-   - เปิดกล้องมือถือสแกน QR Code บนจอ TV (ใช้เน็ตมือถือ 4G/5G หรือ Wi-Fi อะไรก็ได้)
-   - พิมพ์ชื่อเล่น เลือกตัวละคร 3D แล้วกดปุ่มสีทอง **✅ ยืนยันตัวละคร · เข้าจุดปล่อยตัว**
-3. **พิธีกรประจำบูธ (ควบคุมจากหน้าจอ TV):**
-   - ปรับจำนวนบอทได้ตลอดเวลาด้วยปุ่ม **`➕ เพิ่มบอท`**, **`➖ ลดบอท`**, หรือ **`🤖 ล้างบอท (0)`**
-   - เลือกเวลาแข่งขัน (`3 นาที`, `2 นาที`, `1.5 นาที`)
-   - กดปุ่มสีเขียว **`🚀 เริ่มปล่อยตัวรอบนี้ / เริ่มใหม่ (Admin Start)`** เพื่อให้ผู้เล่นทุกคนนับถอยหลัง 3..2..1 และออกวิ่งพร้อมกัน!
+เมื่อตั้งค่าเสร็จแล้ว สามารถเปิดใช้งานผ่านลิงก์จริงได้ทันที:
+
+- 📺 **ลิงก์สำหรับเปิดบนจอ TV กลางบูธ:**
+  ```text
+  http://it.technopark.kmutnb.ac.th/technosurfers/?mode=tv
+  ```
+- 📱 **ลิงก์สำหรับมือถือผู้เข้าชมงาน (หรือสแกนจาก QR Code บนจอ TV ได้เลย):**
+  ```text
+  http://it.technopark.kmutnb.ac.th/technosurfers/
+  ```
 
 ---
 
@@ -197,11 +152,11 @@ pm2 restart techno-runner
   ```bash
   pm2 logs techno-runner
   ```
-- **รีสตาร์ทเซิร์ฟเวอร์เกม (ล้างห้องใหม่ทั้งหมด):**
+- **รีสตาร์ทเซิร์ฟเวอร์เกม:**
   ```bash
   pm2 restart techno-runner
   ```
-- **ตรวจสอบว่าพอร์ต `8787` เปิดทำงานอยู่หรือไม่:**
+- **หาก Nginx Proxy Manager ใน Docker ต่อเข้าพอร์ต `8787` ไม่ได้ (ติด Firewall UFW):**
   ```bash
-  sudo ss -tulpn | grep 8787
+  sudo ufw allow 8787/tcp
   ```

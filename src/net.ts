@@ -551,14 +551,17 @@ export class NetClient {
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const hostname = window.location.hostname || 'localhost';
     const port = window.location.port;
+    const basePath = (window.location.pathname || '/')
+      .replace(/\/index\.html$/i, '')
+      .replace(/\/+$/, '');
     // In Vite dev/preview (ports 5173 / 4173), connect directly to port 8787.
-    // In production (Nginx port 80/443 or unified server on 8787), connect to same-origin `/ws` first,
-    // and fall back to `:8787/ws` if same-origin isn't proxying WebSockets.
+    // In production (Nginx / Nginx Proxy Manager at `/` or `/technosurfers/`), connect to `${basePath}/ws`
+    // on the same origin first, and fall back to `:8787/ws` if same-origin isn't proxying WebSockets.
     const isViteDev = port === '5173' || port === '4173';
     if (isViteDev || (this.useDirectPortFallback && window.location.protocol !== 'https:')) {
-      return `${proto}//${hostname}:8787/ws`;
+      return `${proto}//${hostname}:8787${basePath}/ws`;
     }
-    return `${proto}//${window.location.host}/ws`;
+    return `${proto}//${window.location.host}${basePath}/ws`;
   }
 
   private connectWebSocket() {
