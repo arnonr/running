@@ -634,3 +634,312 @@ export function rampTexture() {
   }
   return tex(c);
 }
+
+/**
+ * High-detail procedural metallic/composite hull skin for 3D towers, pylons, robot arms, and aircraft fuselages.
+ * Breaks up raw geometric primitives with brushed paneling, rivet seams, louver vents, and illuminated accent strips.
+ */
+export function architecturalTowerSkinTexture(baseHex = '#e2e8f0', accentHex = '#38bdf8', stripeHex = '#0284c7') {
+  const W = 256, H = 512;
+  const { c, g } = canvas(W, H);
+
+  // Cylindrical shading gradient across horizontal UVs for natural 3D volume
+  const grad = g.createLinearGradient(0, 0, W, 0);
+  grad.addColorStop(0, baseHex);
+  grad.addColorStop(0.25, '#ffffff');
+  grad.addColorStop(0.55, baseHex);
+  grad.addColorStop(0.85, '#64748b');
+  grad.addColorStop(1, baseHex);
+  g.fillStyle = grad;
+  g.fillRect(0, 0, W, H);
+
+  // Horizontal structural panel seams + rivet lines
+  g.strokeStyle = 'rgba(15, 23, 42, 0.38)';
+  g.lineWidth = 2;
+  for (let y = 32; y < H; y += 48) {
+    g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke();
+    g.fillStyle = 'rgba(15, 23, 42, 0.35)';
+    for (let x = 12; x < W; x += 24) {
+      g.fillRect(x, y - 5, 3, 3);
+      g.fillRect(x, y + 3, 3, 3);
+    }
+  }
+
+  // Vertical panel joints
+  for (let x = 64; x < W; x += 64) {
+    g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke();
+  }
+
+  // Bold Accent & Identification Bands
+  g.fillStyle = stripeHex;
+  g.fillRect(0, 72, W, 22);
+  g.fillRect(0, 340, W, 18);
+  g.fillStyle = accentHex;
+  g.fillRect(0, 96, W, 8);
+  g.fillRect(0, 360, W, 6);
+
+  // Recessed dark technical louver vents & glowing telemetry windows
+  for (let row = 0; row < 5; row++) {
+    const y = 132 + row * 38;
+    for (let col = 0; col < 4; col++) {
+      const x = 14 + col * 64;
+      g.fillStyle = '#0f172a';
+      g.fillRect(x, y, 36, 18);
+      g.fillStyle = row % 2 === 0 ? accentHex : '#94a3b8';
+      g.fillRect(x + 3, y + 3, 30, 5);
+      g.fillStyle = '#475569';
+      g.fillRect(x + 3, y + 11, 30, 4);
+    }
+  }
+
+  // Vertical glowing energy/elevator strips
+  g.fillStyle = accentHex;
+  g.fillRect(28, 0, 5, H);
+  g.fillRect(W - 33, 0, 5, H);
+
+  return tex(c, false);
+}
+
+/**
+ * Wrap-around Air Traffic Control / Observatory Cab Window texture with angled mullions,
+ * sky reflection tint, and glowing radar console indicators inside.
+ */
+export function controlCabWindowSkinTexture(glassHex = '#38bdf8', frameHex = '#0f172a') {
+  const W = 512, H = 256;
+  const { c, g } = canvas(W, H);
+
+  g.fillStyle = frameHex;
+  g.fillRect(0, 0, W, H);
+
+  const glassGrad = g.createLinearGradient(0, 24, 0, H - 28);
+  glassGrad.addColorStop(0, '#e0f2fe');
+  glassGrad.addColorStop(0.35, glassHex);
+  glassGrad.addColorStop(0.8, '#0369a1');
+  glassGrad.addColorStop(1, '#0f172a');
+  g.fillStyle = glassGrad;
+  g.fillRect(0, 26, W, H - 54);
+
+  // Interior radar console glow along bottom of windows
+  for (let x = 16; x < W; x += 32) {
+    g.fillStyle = (x / 32) % 3 === 0 ? '#4ade80' : (x / 32) % 2 === 0 ? '#facc15' : '#38bdf8';
+    g.fillRect(x, H - 46, 18, 8);
+  }
+
+  // Diagonal reflection sheen
+  g.fillStyle = 'rgba(255, 255, 255, 0.24)';
+  for (let x = -120; x < W; x += 96) {
+    g.beginPath();
+    g.moveTo(x, H - 28);
+    g.lineTo(x + 36, H - 28);
+    g.lineTo(x + 96, 26);
+    g.lineTo(x + 60, 26);
+    g.closePath();
+    g.fill();
+  }
+
+  // Structural window mullions (8 panes around cylinder)
+  g.fillStyle = frameHex;
+  for (let i = 0; i <= 8; i++) {
+    const x = i * (W / 8);
+    g.fillRect(x - 5, 18, 10, H - 36);
+  }
+  // Upper and lower steel rim bands
+  g.fillStyle = '#cbd5e1';
+  g.fillRect(0, 16, W, 10);
+  g.fillRect(0, H - 28, W, 12);
+
+  return tex(c, false);
+}
+
+/**
+ * Aviation standard 5-band alternating orange-and-white windsock fabric texture.
+ */
+export function windsockSkinTexture() {
+  const W = 256, H = 256;
+  const { c, g } = canvas(W, H);
+  const bands = 5;
+  const bandH = H / bands;
+  for (let i = 0; i < bands; i++) {
+    g.fillStyle = i % 2 === 0 ? '#f97316' : '#f8fafc';
+    g.fillRect(0, i * bandH, W, bandH + 1);
+    // Stitched rib seam
+    g.fillStyle = 'rgba(15, 23, 42, 0.28)';
+    g.fillRect(0, i * bandH, W, 3);
+  }
+  // Subtle cloth fold shading
+  const shade = g.createLinearGradient(0, 0, W, 0);
+  shade.addColorStop(0, 'rgba(0,0,0,0.18)');
+  shade.addColorStop(0.5, 'rgba(255,255,255,0.12)');
+  shade.addColorStop(1, 'rgba(0,0,0,0.22)');
+  g.fillStyle = shade;
+  g.fillRect(0, 0, W, H);
+  return tex(c, false);
+}
+
+/**
+ * Monocrystalline Photovoltaic Solar Panel Grid Texture with silver busbars and cell interconnects.
+ */
+export function solarArraySkinTexture() {
+  const W = 256, H = 256;
+  const { c, g } = canvas(W, H);
+  // Anodized aluminum perimeter frame
+  g.fillStyle = '#cbd5e1';
+  g.fillRect(0, 0, W, H);
+  // Deep photovoltaic silicon blue base
+  const gr = g.createLinearGradient(0, 0, W, H);
+  gr.addColorStop(0, '#0c4a6e');
+  gr.addColorStop(0.5, '#0284c7');
+  gr.addColorStop(1, '#1e3a8a');
+  g.fillStyle = gr;
+  g.fillRect(10, 10, W - 20, H - 20);
+
+  // Solar cell grid + silver busbars
+  const cols = 6, rows = 6;
+  const cellW = (W - 20) / cols;
+  const cellH = (H - 20) / rows;
+  g.strokeStyle = '#bae6fd';
+  g.lineWidth = 2;
+  for (let i = 1; i < cols; i++) {
+    const x = 10 + i * cellW;
+    g.beginPath(); g.moveTo(x, 10); g.lineTo(x, H - 10); g.stroke();
+  }
+  for (let j = 1; j < rows; j++) {
+    const y = 10 + j * cellH;
+    g.beginPath(); g.moveTo(10, y); g.lineTo(W - 10, y); g.stroke();
+  }
+  // White diamond cell corner junctions
+  g.fillStyle = '#f8fafc';
+  for (let i = 1; i < cols; i++) {
+    for (let j = 1; j < rows; j++) {
+      const x = 10 + i * cellW;
+      const y = 10 + j * cellH;
+      g.fillRect(x - 3, y - 3, 6, 6);
+    }
+  }
+  return tex(c, false);
+}
+
+/**
+ * High-density 5G / AI Supercomputer Server Rack Skin with perforated bays and LED telemetry bars.
+ */
+export function serverRackSkinTexture(accentHex = '#c084fc') {
+  const W = 256, H = 512;
+  const { c, g } = canvas(W, H);
+  g.fillStyle = '#090d16';
+  g.fillRect(0, 0, W, H);
+
+  // Outer rack rails
+  g.fillStyle = '#1e293b';
+  g.fillRect(0, 0, 18, H);
+  g.fillRect(W - 18, 0, 18, H);
+  g.fillStyle = accentHex;
+  g.fillRect(6, 0, 4, H);
+  g.fillRect(W - 10, 0, 4, H);
+
+  // 12 Server Blade Bays
+  for (let b = 0; b < 12; b++) {
+    const y = 14 + b * 40;
+    g.fillStyle = '#1e293b';
+    g.fillRect(24, y, W - 48, 32);
+    g.fillStyle = '#0f172a';
+    g.fillRect(28, y + 4, W - 56, 24);
+    // Glowing LED status bar + drive activity lights
+    g.fillStyle = b % 3 === 0 ? '#38bdf8' : accentHex;
+    g.fillRect(34, y + 10, 68, 6);
+    for (let led = 0; led < 6; led++) {
+      g.fillStyle = (b + led) % 2 === 0 ? '#4ade80' : accentHex;
+      g.fillRect(120 + led * 16, y + 10, 8, 8);
+    }
+  }
+  return tex(c, false);
+}
+
+/**
+ * Bioluminescent Photobioreactor Vessel Skin with measurement ticks, steel collars, and rising micro-bubbles.
+ */
+export function bioreactorSkinTexture(glowHex = '#4ade80') {
+  const W = 256, H = 512;
+  const { c, g } = canvas(W, H);
+  const gr = g.createLinearGradient(0, 0, W, 0);
+  gr.addColorStop(0, '#064e3b');
+  gr.addColorStop(0.35, glowHex);
+  gr.addColorStop(0.5, '#ecfccb');
+  gr.addColorStop(0.7, glowHex);
+  gr.addColorStop(1, '#064e3b');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, W, H);
+
+  // Stainless steel reinforcement hoops
+  for (const y of [0, 120, 250, 380, 492]) {
+    g.fillStyle = '#475569';
+    g.fillRect(0, y, W, 20);
+    g.fillStyle = '#e2e8f0';
+    g.fillRect(0, y + 4, W, 6);
+  }
+
+  // Graduated laboratory volume scale ticks
+  g.fillStyle = 'rgba(255, 255, 255, 0.85)';
+  for (let y = 32; y < H - 24; y += 16) {
+    const w = y % 64 === 0 ? 28 : 14;
+    g.fillRect(36, y, w, 3);
+  }
+
+  // Rising oxygen/bio micro-bubbles
+  g.fillStyle = 'rgba(255, 255, 255, 0.55)';
+  for (let i = 0; i < 42; i++) {
+    const bx = 24 + ((i * 53) % (W - 48));
+    const by = 24 + ((i * 89) % (H - 48));
+    const r = 3 + (i % 5);
+    g.beginPath();
+    g.arc(bx, by, r, 0, Math.PI * 2);
+    g.fill();
+  }
+  return tex(c, false);
+}
+
+/**
+ * Multi-stage Space Launch Vehicle (Rocket) Hull Skin with cryogenic tank ribs,
+ * roll-pattern checkerboard interstage, and SUTO-IX aerospace markings.
+ */
+export function rocketHullSkinTexture(accentHex = '#f472b6') {
+  const W = 256, H = 512;
+  const { c, g } = canvas(W, H);
+
+  // Cylindrical white aerospace hull shading
+  const gr = g.createLinearGradient(0, 0, W, 0);
+  gr.addColorStop(0, '#cbd5e1');
+  gr.addColorStop(0.3, '#ffffff');
+  gr.addColorStop(0.65, '#f8fafc');
+  gr.addColorStop(1, '#94a3b8');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, W, H);
+
+  // Classic NASA/Saturn-style black-and-white roll-pattern checkerboard interstage
+  const sq = W / 8;
+  for (let i = 0; i < 8; i++) {
+    g.fillStyle = i % 2 === 0 ? '#0f172a' : '#f8fafc';
+    g.fillRect(i * sq, 150, sq, 28);
+    g.fillStyle = i % 2 === 1 ? '#0f172a' : '#f8fafc';
+    g.fillRect(i * sq, 178, sq, 28);
+  }
+
+  // Accent stage bands
+  g.fillStyle = accentHex;
+  g.fillRect(0, 64, W, 18);
+  g.fillRect(0, 380, W, 22);
+  g.fillStyle = '#0f172a';
+  g.fillRect(0, 476, W, 36);
+
+  // Cryogenic tank weld seams & vertical cable fairing
+  g.strokeStyle = 'rgba(15, 23, 42, 0.32)';
+  g.lineWidth = 2;
+  for (let y = 40; y < H; y += 52) {
+    g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke();
+  }
+  g.fillStyle = '#475569';
+  g.fillRect(W / 2 - 6, 0, 12, H);
+  g.fillStyle = '#38bdf8';
+  g.fillRect(W / 2 - 2, 0, 4, H);
+
+  return tex(c, false);
+}

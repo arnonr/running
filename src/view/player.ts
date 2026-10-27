@@ -4,6 +4,7 @@ import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { Sim } from '../sim/sim';
 import type { SimEvent, CenterId } from '../sim/types';
 import { PLAYER, JUMP_V, SUPER_JUMP_V, GRAVITY, laneX, CENTERS } from '../config';
+import { architecturalTowerSkinTexture, rocketHullSkinTexture } from './textures';
 
 type Clip = 'idle' | 'run' | 'jump' | 'jumpup' | 'fall' | 'roll' | 'die' | 'runlookback';
 
@@ -69,108 +70,195 @@ export class PlayerView {
   }
 
   private buildCenterAttachments() {
-    const mat = (hex: string, opacity = 0.85, wireframe = false) =>
+    const basicMat = (hex: string, opacity = 0.85, wireframe = false) =>
       new THREE.MeshBasicMaterial({ color: hex, transparent: opacity < 1, opacity, wireframe });
+    const aeroSkinMat = new THREE.MeshPhongMaterial({
+      map: architecturalTowerSkinTexture('#f8fafc', '#38bdf8', '#0284c7'),
+      shininess: 75,
+    });
+    const darkMetalMat = new THREE.MeshPhongMaterial({ color: 0x1e293b, shininess: 85 });
+    const chromeMat = new THREE.MeshPhongMaterial({ color: 0xe2e8f0, shininess: 100 });
+    const rocketSkinMat = new THREE.MeshPhongMaterial({
+      map: rocketHullSkinTexture('#f472b6'),
+      shininess: 80,
+    });
 
-    // #1 Jet Fighter Pack: sleek swept-back delta wings + central jet fuselage + twin tail fins + glowing afterburners
+    // #1 Jet Fighter Pack: textured swept-back aerospace delta wings + central spine + twin turbine nacelles + dual-core afterburners
     const g1 = new THREE.Group();
     const wingShape = new THREE.Shape();
-    wingShape.moveTo(0, 0.45);
-    wingShape.lineTo(1.25, -0.25);
-    wingShape.lineTo(1.15, -0.45);
-    wingShape.lineTo(0, -0.1);
-    wingShape.lineTo(-1.15, -0.45);
-    wingShape.lineTo(-1.25, -0.25);
+    wingShape.moveTo(0, 0.48);
+    wingShape.lineTo(1.32, -0.22);
+    wingShape.lineTo(1.18, -0.46);
+    wingShape.lineTo(0, -0.12);
+    wingShape.lineTo(-1.18, -0.46);
+    wingShape.lineTo(-1.32, -0.22);
     wingShape.closePath();
-    const wingGeo = new THREE.ExtrudeGeometry(wingShape, { depth: 0.06, bevelEnabled: false });
+    const wingGeo = new THREE.ExtrudeGeometry(wingShape, {
+      depth: 0.055,
+      bevelEnabled: true,
+      bevelSegments: 2,
+      steps: 1,
+      bevelSize: 0.02,
+      bevelThickness: 0.02,
+    });
     wingGeo.rotateX(Math.PI / 2);
-    const wing = new THREE.Mesh(wingGeo, mat('#38bdf8', 0.92));
-    wing.position.set(0, 1.2, 0.22);
+    const wing = new THREE.Mesh(wingGeo, aeroSkinMat);
+    wing.position.set(0, 1.22, 0.22);
 
-    const podGeo = new THREE.CylinderGeometry(0.11, 0.14, 0.75, 10);
+    // Central dorsal jet spine + neon energy core
+    const spine = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.14, 0.85, 14), darkMetalMat);
+    spine.rotation.x = Math.PI / 2;
+    spine.position.set(0, 1.26, 0.22);
+    const spineCore = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.65), basicMat('#38bdf8', 0.95));
+    spineCore.position.set(0, 1.35, 0.22);
+    g1.add(wing, spine, spineCore);
+
+    const podGeo = new THREE.CylinderGeometry(0.12, 0.15, 0.78, 16);
     podGeo.rotateX(Math.PI / 2);
     for (const s of [-1, 1]) {
-      const pod = new THREE.Mesh(podGeo, mat('#0ea5e9', 0.95));
-      pod.position.set(s * 0.34, 1.15, 0.25);
-      const fin = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.38, 0.32), mat('#e0f2fe', 0.95));
-      fin.position.set(s * 0.34, 1.38, 0.38);
-      fin.rotation.z = -s * 0.22;
-      const flame = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.55, 10), mat('#f97316', 0.92));
-      flame.rotation.x = Math.PI / 2;
-      flame.position.set(s * 0.34, 1.15, 0.78);
-      g1.add(pod, fin, flame);
-    }
-    g1.add(wing);
+      // Contoured turbine nacelle + glowing intake ring + dark nozzle bell
+      const pod = new THREE.Mesh(podGeo, aeroSkinMat);
+      pod.position.set(s * 0.36, 1.15, 0.24);
+      const intakeRing = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.025, 8, 16), basicMat('#38bdf8', 0.95));
+      intakeRing.position.set(s * 0.36, 1.15, -0.15);
+      const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.14, 0.22, 14), darkMetalMat);
+      nozzle.rotation.x = Math.PI / 2;
+      nozzle.position.set(s * 0.36, 1.15, 0.66);
 
-    // #2 Robo-Wingman Drones: two hovering companion drones Left & Right
+      // Swept canted vertical tail fin + yellow tip strobe
+      const fin = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.42, 0.36), aeroSkinMat);
+      fin.position.set(s * 0.38, 1.4, 0.36);
+      fin.rotation.z = -s * 0.26;
+      const finTip = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.08, 0.36), basicMat('#facc15', 0.95));
+      finTip.position.set(s * 0.43, 1.6, 0.36);
+      finTip.rotation.z = -s * 0.26;
+
+      // Wingtip missile rail
+      const wingRail = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.52, 8), basicMat('#38bdf8', 0.95));
+      wingRail.rotation.x = Math.PI / 2;
+      wingRail.position.set(s * 1.25, 1.2, 0.52);
+
+      // Two-stage afterburner plume (outer orange cone + inner white-hot plasma core)
+      const flameOuter = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.62, 14), basicMat('#f97316', 0.88));
+      flameOuter.rotation.x = Math.PI / 2;
+      flameOuter.position.set(s * 0.36, 1.15, 1.02);
+      const flameCore = new THREE.Mesh(new THREE.ConeGeometry(0.065, 0.38, 12), basicMat('#fef08a', 0.96));
+      flameCore.rotation.x = Math.PI / 2;
+      flameCore.position.set(s * 0.36, 1.15, 0.9);
+
+      g1.add(pod, intakeRing, nozzle, fin, finTip, wingRail, flameOuter, flameCore);
+    }
+
+    // #2 Robo-Wingman Drones: two detailed quad-rotor companion drones Left & Right
     const g2 = new THREE.Group();
+    const roboMat = new THREE.MeshPhongMaterial({
+      map: architecturalTowerSkinTexture('#fb923c', '#facc15', '#0f172a'),
+      shininess: 80,
+    });
     for (const s of [-1, 1]) {
-      const drone = new THREE.Mesh(new THREE.OctahedronGeometry(0.28, 0), mat('#fb923c', 0.92));
-      drone.position.set(s * 1.15, 1.45, -0.2);
-      const rotor = new THREE.Mesh(new THREE.RingGeometry(0.22, 0.36, 16), mat('#fde047', 0.75));
-      rotor.rotation.x = Math.PI / 2;
-      rotor.position.set(s * 1.15, 1.72, -0.2);
-      g2.add(drone, rotor);
+      const droneBody = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.18, 0.26, 12), roboMat);
+      droneBody.position.set(s * 1.15, 1.45, -0.2);
+      const droneEye = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 10), basicMat('#38bdf8', 0.95));
+      droneEye.position.set(s * 1.15, 1.45, -0.38);
+      const rotorGuard = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.035, 8, 20), darkMetalMat);
+      rotorGuard.rotation.x = Math.PI / 2;
+      rotorGuard.position.set(s * 1.15, 1.62, -0.2);
+      const rotorDisc = new THREE.Mesh(new THREE.RingGeometry(0.14, 0.32, 20), basicMat('#fde047', 0.78));
+      rotorDisc.rotation.x = Math.PI / 2;
+      rotorDisc.position.set(s * 1.15, 1.63, -0.2);
+      g2.add(droneBody, droneEye, rotorGuard, rotorDisc);
     }
 
-    // #3 EV Express Train Armor: glowing V-shaped front ram + side rails
+    // #3 EV Express Train Armor: aerodynamic Maglev nose cowling + golden flux rails
     const g3 = new THREE.Group();
-    const plow = new THREE.Mesh(new THREE.ConeGeometry(0.95, 1.4, 4), mat('#facc15', 0.65));
+    const plow = new THREE.Mesh(new THREE.ConeGeometry(0.92, 1.35, 6), new THREE.MeshPhongMaterial({
+      color: 0xfacc15,
+      emissive: 0xa16207,
+      transparent: true,
+      opacity: 0.72,
+      shininess: 100,
+    }));
     plow.rotation.x = -Math.PI / 2;
-    plow.rotation.z = Math.PI / 4;
-    plow.position.set(0, 0.95, -0.65);
-    g3.add(plow);
+    plow.position.set(0, 0.95, -0.68);
+    const bumperArch = new THREE.Mesh(new THREE.TorusGeometry(0.78, 0.06, 10, 24, Math.PI), basicMat('#38bdf8', 0.95));
+    bumperArch.rotation.x = Math.PI / 2;
+    bumperArch.position.set(0, 0.65, -0.25);
+    g3.add(plow, bumperArch);
 
-    // #4 Green Energy Shield: geodesic protective sphere around runner
+    // #4 Green Energy Shield: geodesic protective sphere + equatorial solar ring
     const g4 = new THREE.Group();
-    const dome = new THREE.Mesh(new THREE.IcosahedronGeometry(1.18, 1), mat('#4ade80', 0.42, true));
+    const dome = new THREE.Mesh(new THREE.IcosahedronGeometry(1.18, 1), basicMat('#4ade80', 0.42, true));
     dome.position.set(0, 1.0, 0);
-    g4.add(dome);
+    const eqRing = new THREE.Mesh(new THREE.TorusGeometry(1.22, 0.04, 8, 28), basicMat('#10b981', 0.85));
+    eqRing.rotation.x = Math.PI / 2.3;
+    eqRing.position.set(0, 1.0, 0);
+    g4.add(dome, eqRing);
 
-    // #5 5G Super Magnet: expanding purple 5G signal rings overhead
+    // #5 5G Super Magnet: expanding purple & cyan 5G signal rings + central antenna node
     const g5 = new THREE.Group();
+    const node5G = new THREE.Mesh(new THREE.OctahedronGeometry(0.18, 0), basicMat('#f0abfc', 0.95));
+    node5G.position.set(0, 2.35, 0);
+    g5.add(node5G);
     for (let i = 0; i < 3; i++) {
-      const r = new THREE.Mesh(new THREE.TorusGeometry(0.45 + i * 0.25, 0.03, 8, 24), mat('#c084fc', 0.8 - i * 0.18));
+      const r = new THREE.Mesh(
+        new THREE.TorusGeometry(0.45 + i * 0.25, 0.035, 8, 24),
+        basicMat(i % 2 === 0 ? '#c084fc' : '#38bdf8', 0.85 - i * 0.16),
+      );
       r.rotation.x = Math.PI / 2;
       r.position.set(0, 1.85 + i * 0.18, 0);
       g5.add(r);
     }
 
-    // #6 Radar Path Scanner: rotating radar dish + sweep cone ahead
+    // #6 Radar Path Scanner: contoured parabolic dish + feedhorn + sweep cone ahead
     const g6 = new THREE.Group();
-    const dish = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.12, 0.18, 16), mat('#2dd4bf', 0.85));
-    dish.position.set(0, 2.05, 0);
-    const beam = new THREE.Mesh(new THREE.ConeGeometry(0.85, 2.4, 12, 1, true), mat('#2dd4bf', 0.28));
+    const dish = new THREE.Mesh(new THREE.ConeGeometry(0.46, 0.22, 20, 1, true), chromeMat);
+    dish.position.set(0, 2.08, 0);
+    const dishRim = new THREE.Mesh(new THREE.TorusGeometry(0.46, 0.03, 8, 20), basicMat('#2dd4bf', 0.95));
+    dishRim.rotation.x = Math.PI / 2;
+    dishRim.position.set(0, 2.18, 0);
+    const beam = new THREE.Mesh(new THREE.ConeGeometry(0.85, 2.4, 16, 1, true), basicMat('#2dd4bf', 0.28));
     beam.rotation.x = Math.PI / 2;
     beam.position.set(0, 1.0, -1.4);
-    g6.add(dish, beam);
+    g6.add(dish, dishRim, beam);
 
-    // #7 Bio-Chem Bouncer Boots: glowing lime-green DNA rings around legs
+    // #7 Bio-Chem Bouncer Boots: glowing lime-and-teal DNA helix rings around legs
     const g7 = new THREE.Group();
-    for (let i = 0; i < 2; i++) {
-      const bootRing = new THREE.Mesh(new THREE.TorusGeometry(0.48, 0.05, 8, 20), mat('#a3e635', 0.88));
-      bootRing.rotation.x = Math.PI / 2;
-      bootRing.position.set(0, 0.25 + i * 0.35, 0);
+    for (let i = 0; i < 3; i++) {
+      const bootRing = new THREE.Mesh(
+        new THREE.TorusGeometry(0.48, 0.045, 8, 24),
+        basicMat(i % 2 === 0 ? '#a3e635' : '#2dd4bf', 0.9),
+      );
+      bootRing.rotation.x = Math.PI / 2 + (i - 1) * 0.18;
+      bootRing.position.set(0, 0.22 + i * 0.26, 0);
       g7.add(bootRing);
     }
 
-    // #8 Med-Tech Recovery Drone: orbiting rose-pink medical cross halo
+    // #8 Med-Tech Recovery Drone: beveled 3D medical cross + chrome halo ring
     const g8 = new THREE.Group();
-    const bar1 = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.16, 0.16), mat('#fb7185', 0.95));
-    const bar2 = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.55, 0.16), mat('#fb7185', 0.95));
-    bar1.position.set(0, 2.15, 0);
-    bar2.position.set(0, 2.15, 0);
-    g8.add(bar1, bar2);
+    const crossOuterV = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.22, 0.14), chromeMat);
+    const crossOuterH = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.62, 0.14), chromeMat);
+    const bar1 = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.16, 0.18), basicMat('#fb7185', 0.95));
+    const bar2 = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.54, 0.18), basicMat('#fb7185', 0.95));
+    const medHalo = new THREE.Mesh(new THREE.TorusGeometry(0.48, 0.03, 8, 24), basicMat('#fecdd3', 0.85));
+    for (const m of [crossOuterV, crossOuterH, bar1, bar2, medHalo]) m.position.set(0, 2.18, 0);
+    g8.add(crossOuterV, crossOuterH, bar1, bar2, medHalo);
 
-    // #9 Space Rocket Fever: twin pink-magenta space boosters + star halo
+    // #9 Space Rocket Fever: twin textured orbital boosters with nose cones, exhaust bells & plasma plumes + star halo
     const g9 = new THREE.Group();
     for (const s of [-1, 1]) {
-      const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.18, 0.85, 10), mat('#f472b6', 0.92));
-      tank.position.set(s * 0.32, 1.15, 0.32);
-      g9.add(tank);
+      const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.17, 0.85, 16), rocketSkinMat);
+      tank.position.set(s * 0.34, 1.18, 0.32);
+      const nose = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.32, 16), basicMat('#f472b6', 0.95));
+      nose.position.set(s * 0.34, 1.76, 0.32);
+      const bell = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.24, 14), darkMetalMat);
+      bell.position.set(s * 0.34, 0.68, 0.32);
+      const plume = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.48, 12), basicMat('#38bdf8', 0.9));
+      plume.rotation.x = Math.PI;
+      plume.position.set(s * 0.34, 0.38, 0.32);
+      g9.add(tank, nose, bell, plume);
     }
-    const starRing = new THREE.Mesh(new THREE.TorusGeometry(0.9, 0.04, 8, 24), mat('#f472b6', 0.75));
-    starRing.position.set(0, 1.1, 0);
+    const starRing = new THREE.Mesh(new THREE.TorusGeometry(0.92, 0.04, 8, 28), basicMat('#f472b6', 0.8));
+    starRing.position.set(0, 1.15, 0);
     g9.add(starRing);
 
     const list: [CenterId, THREE.Group][] = [
@@ -190,12 +278,16 @@ export class PlayerView {
       const active = centerId === id;
       grp.visible = active;
       if (active) {
-        if (id === 2 || id === 4 || id === 6 || id === 8) {
+        if (id === 1) {
+          // Subtle jet hover vibration
+          grp.position.y = Math.sin(time * 18) * 0.025;
+        } else if (id === 2 || id === 4 || id === 6 || id === 8) {
           grp.rotation.y = time * 3.2;
         } else if (id === 5) {
           grp.position.y = Math.sin(time * 8) * 0.08;
         } else if (id === 9) {
-          grp.children[2].rotation.z = time * 4;
+          const lastChild = grp.children[grp.children.length - 1];
+          if (lastChild) lastChild.rotation.z = time * 4;
         }
       }
     }

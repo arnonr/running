@@ -9,6 +9,8 @@ import {
   trackTexture, pavingTexture, groundTexture, glowTexture,
   centerCapsuleTexture, centerBillboardTexture, centerGateBannerTexture,
   nameBadgeTexture, rampTexture, HORIZON, lerpCenterBiome,
+  architecturalTowerSkinTexture, controlCabWindowSkinTexture, windsockSkinTexture,
+  solarArraySkinTexture, serverRackSkinTexture, bioreactorSkinTexture, rocketHullSkinTexture,
 } from './textures';
 import {
   LANE_W, laneX, CAR_LEN, CAR_GAP, VIEW_AHEAD, OB, CENTERS, CENTER_LIST,
@@ -278,351 +280,826 @@ export class World {
   }
 
   /**
-   * Builds 9 distinct, detailed 3D Worlds (Static Architecture + Animated Kinetic Mechanisms + Overhead Sky Elements)
-   * so every single Center (#1..#9) transforms the open horizon!
+   * Builds 9 distinct, richly-skinned 3D Worlds (Static Architecture + Animated Kinetic Mechanisms + Overhead Sky Elements)
+   * with procedural hull textures, structural collars, observation decks, and realistic engineering geometry.
    */
   private buildNineCenterWorlds(scene: THREE.Scene) {
-    const whiteMat = new THREE.MeshLambertMaterial({ color: 0xf8fafc });
-    const silverMat = new THREE.MeshLambertMaterial({ color: 0xcbd5e1 });
-    const slateMat = new THREE.MeshLambertMaterial({ color: 0x334155 });
-    const darkMat = new THREE.MeshLambertMaterial({ color: 0x0f172a });
+    const whiteMat = new THREE.MeshPhongMaterial({ color: 0xf8fafc, shininess: 45 });
+    const silverMat = new THREE.MeshPhongMaterial({ color: 0xcbd5e1, shininess: 65 });
+    const slateMat = new THREE.MeshPhongMaterial({ color: 0x334155, shininess: 50 });
+    const darkMat = new THREE.MeshPhongMaterial({ color: 0x0f172a, shininess: 80 });
+    const glassDarkMat = new THREE.MeshPhongMaterial({ color: 0x0c4a6e, emissive: 0x082f49, shininess: 110 });
+    const solarSkinMat = new THREE.MeshPhongMaterial({ map: solarArraySkinTexture(), shininess: 85 });
 
     // ========================================================================
-    // #1 AVIATION (ชั้น 1): Air Traffic Control Tower + Hangar Arch + Jet Squadron
+    // #1 AVIATION (ชั้น 1): Textured Air Traffic Control Tower + Striped Windsock + Hangar + Jet Squadron
     // ========================================================================
     {
+      const aeroTowerSkin = new THREE.MeshPhongMaterial({
+        map: architecturalTowerSkinTexture('#f1f5f9', '#38bdf8', '#0284c7'),
+        shininess: 55,
+      });
+      const atcCabGlassMat = new THREE.MeshPhongMaterial({
+        map: controlCabWindowSkinTexture('#38bdf8', '#0f172a'),
+        emissive: 0x075985,
+        emissiveIntensity: 0.35,
+        shininess: 95,
+      });
+      const windsockMat = new THREE.MeshLambertMaterial({
+        map: windsockSkinTexture(),
+        side: THREE.DoubleSide,
+      });
+
       const stat = new THREE.Group();
-      const towerBase = new THREE.Mesh(new THREE.CylinderGeometry(0.65, 1.1, 4.2, 8), whiteMat);
-      towerBase.position.y = 2.1;
-      const towerShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.65, 3.6, 8), silverMat);
-      towerShaft.position.y = 5.8;
-      const cabGlass = new THREE.Mesh(new THREE.CylinderGeometry(1.35, 0.9, 1.3, 10), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
-      cabGlass.position.y = 8.1;
-      const cabRoof = new THREE.Mesh(new THREE.ConeGeometry(1.5, 0.6, 10), whiteMat);
-      cabRoof.position.y = 9.0;
-      const windsockPole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.8, 6), silverMat);
-      windsockPole.position.set(1.8, 1.4, 0);
-      const windsock = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.95, 8), new THREE.MeshBasicMaterial({ color: 0xf97316 }));
-      windsock.rotation.z = Math.PI / 2;
-      windsock.position.set(2.25, 2.6, 0);
-      stat.add(towerBase, towerShaft, cabGlass, cabRoof, windsockPole, windsock);
+      // Flared architectural foundation plinth
+      const plinth = new THREE.Mesh(new THREE.CylinderGeometry(1.25, 1.5, 0.7, 16), slateMat);
+      plinth.position.y = 0.35;
+      // Lower & upper ribbed control tower shaft with procedural hull skin
+      const towerBase = new THREE.Mesh(new THREE.CylinderGeometry(0.82, 1.18, 3.8, 16), aeroTowerSkin);
+      towerBase.position.y = 2.5;
+      const midCollar = new THREE.Mesh(new THREE.CylinderGeometry(1.12, 1.05, 0.36, 16), slateMat);
+      midCollar.position.y = 4.4;
+      const midRing = new THREE.Mesh(new THREE.TorusGeometry(1.12, 0.06, 8, 24), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
+      midRing.rotation.x = Math.PI / 2;
+      midRing.position.y = 4.4;
+      const towerShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.68, 0.82, 2.9, 16), aeroTowerSkin);
+      towerShaft.position.y = 5.95;
+      // External elevator/service spine along tower side
+      const elevShaft = new THREE.Mesh(new THREE.BoxGeometry(0.38, 6.4, 0.42), slateMat);
+      elevShaft.position.set(-0.78, 3.7, 0);
+      // Lower observation catwalk deck & safety railing
+      const catwalk = new THREE.Mesh(new THREE.CylinderGeometry(1.48, 0.95, 0.48, 16), silverMat);
+      catwalk.position.y = 7.4;
+      const railRing = new THREE.Mesh(new THREE.TorusGeometry(1.45, 0.045, 8, 24), slateMat);
+      railRing.rotation.x = Math.PI / 2;
+      railRing.position.y = 7.72;
+      // Multi-pane angled ATC control cab with interior radar glow
+      const cabGlass = new THREE.Mesh(new THREE.CylinderGeometry(1.62, 1.28, 1.35, 16), atcCabGlassMat);
+      cabGlass.position.y = 8.28;
+      // Overhanging roof visor + communications deck
+      const cabRoof = new THREE.Mesh(new THREE.CylinderGeometry(1.35, 1.75, 0.32, 16), whiteMat);
+      cabRoof.position.y = 9.08;
+      const roofCap = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 1.2, 0.28, 16), slateMat);
+      roofCap.position.y = 9.35;
+
+      // Striped aviation windsock on swivel frame
+      const windsockPole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.09, 3.4, 10), silverMat);
+      windsockPole.position.set(2.05, 1.7, 0);
+      const sockArm = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.55, 8), silverMat);
+      sockArm.rotation.z = Math.PI / 2;
+      sockArm.position.set(2.3, 3.25, 0);
+      const sockHoop = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.03, 8, 16), slateMat);
+      sockHoop.rotation.y = Math.PI / 2;
+      sockHoop.position.set(2.42, 3.05, 0);
+      const windsock = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.3, 1.25, 16, 1, true), windsockMat);
+      windsock.rotation.z = Math.PI / 2 - 0.12;
+      windsock.position.set(3.02, 2.98, 0);
+
+      // Side Quonset Airfield Hangar Bay
+      const hangarShell = new THREE.Mesh(
+        new THREE.CylinderGeometry(1.35, 1.35, 2.2, 16, 1, false, 0, Math.PI),
+        aeroTowerSkin,
+      );
+      hangarShell.rotation.z = Math.PI / 2;
+      hangarShell.rotation.y = Math.PI / 2;
+      hangarShell.position.set(-2.2, 0.1, 0);
+      const hangarDoor = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.1, 2.24), darkMat);
+      hangarDoor.position.set(-2.2, 0.55, 0);
+
+      stat.add(
+        plinth, towerBase, midCollar, midRing, towerShaft, elevShaft,
+        catwalk, railRing, cabGlass, cabRoof, roofCap,
+        windsockPole, sockArm, sockHoop, windsock, hangarShell, hangarDoor,
+      );
       this.centerStatic[1] = new Instanced(stat, SCENERY_POOL_LIMITS.staticPerCenter, scene, { name: 'c1-stat' });
 
+      // Rotating Dual-Band Airport Surveillance Radar
       const kin = new THREE.Group();
-      const radarBar = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.18, 0.28), new THREE.MeshBasicMaterial({ color: 0xfacc15 }));
-      const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.26, 8, 8), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
-      beacon.position.y = 0.25;
-      kin.add(radarBar, beacon);
+      const pedMount = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.3, 0.32, 12), slateMat);
+      const primaryDish = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.36, 0.14), whiteMat);
+      primaryDish.position.set(0, 0.28, 0);
+      const secondaryBar = new THREE.Mesh(new THREE.BoxGeometry(1.65, 0.14, 0.22), new THREE.MeshBasicMaterial({ color: 0xfacc15 }));
+      secondaryBar.position.set(0, 0.55, 0.08);
+      const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 12), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
+      beacon.position.y = 0.78;
+      kin.add(pedMount, primaryDish, secondaryBar, beacon);
       this.centerKinetic[1] = new Instanced(kin, SCENERY_POOL_LIMITS.kineticPerCenter, scene, { name: 'c1-kin' });
 
+      // Detailed Supersonic Twin-Tail Jet Fighter Squadron overhead!
       const over = new THREE.Group();
-      const fuselage = new THREE.Mesh(new THREE.ConeGeometry(0.32, 2.8, 8), whiteMat);
-      fuselage.rotation.x = -Math.PI / 2;
-      const wings = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.08, 0.85), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
-      wings.position.z = 0.2;
-      const tail = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.65, 0.55), new THREE.MeshBasicMaterial({ color: 0xfacc15 }));
-      tail.position.set(0, 0.32, 0.95);
-      const burner = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.75, 8), new THREE.MeshBasicMaterial({ color: 0xf97316 }));
-      burner.rotation.x = Math.PI / 2;
-      burner.position.z = 1.65;
-      over.add(fuselage, wings, tail, burner);
+      const noseCone = new THREE.Mesh(new THREE.ConeGeometry(0.24, 1.1, 16), slateMat);
+      noseCone.rotation.x = -Math.PI / 2;
+      noseCone.position.z = -1.65;
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.36, 2.2, 16), aeroTowerSkin);
+      body.rotation.x = -Math.PI / 2;
+      body.position.z = 0;
+      // Tinted bubble cockpit canopy
+      const canopy = new THREE.Mesh(new THREE.SphereGeometry(0.23, 14, 10), glassDarkMat);
+      canopy.scale.set(0.85, 0.72, 2.2);
+      canopy.position.set(0, 0.18, -0.45);
+      // Swept delta main wing with ExtrudeGeometry
+      const jetWingShape = new THREE.Shape();
+      jetWingShape.moveTo(0, 0.65);
+      jetWingShape.lineTo(1.65, -0.35);
+      jetWingShape.lineTo(1.5, -0.65);
+      jetWingShape.lineTo(0, -0.2);
+      jetWingShape.lineTo(-1.5, -0.65);
+      jetWingShape.lineTo(-1.65, -0.35);
+      jetWingShape.closePath();
+      const jetWingGeo = new THREE.ExtrudeGeometry(jetWingShape, { depth: 0.07, bevelEnabled: false });
+      jetWingGeo.rotateX(Math.PI / 2);
+      const mainWing = new THREE.Mesh(jetWingGeo, aeroTowerSkin);
+      mainWing.position.set(0, 0.02, 0.25);
+      // Wingtip missile rails & navigation strobes
+      for (const s of [-1, 1]) {
+        const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.85, 8), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
+        rail.rotation.x = Math.PI / 2;
+        rail.position.set(s * 1.58, 0, 0.45);
+        const intake = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.22, 1.3), slateMat);
+        intake.position.set(s * 0.32, -0.04, 0.1);
+        const tailFin = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.68, 0.58), aeroTowerSkin);
+        tailFin.position.set(s * 0.28, 0.38, 0.85);
+        tailFin.rotation.z = -s * 0.24;
+        const finTip = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 0.58), new THREE.MeshBasicMaterial({ color: 0xfacc15 }));
+        finTip.position.set(s * 0.36, 0.68, 0.85);
+        finTip.rotation.z = -s * 0.24;
+        const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.17, 0.36, 12), darkMat);
+        nozzle.rotation.x = Math.PI / 2;
+        nozzle.position.set(s * 0.18, 0, 1.22);
+        const burnerOuter = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.85, 12), new THREE.MeshBasicMaterial({ color: 0xf97316 }));
+        burnerOuter.rotation.x = Math.PI / 2;
+        burnerOuter.position.set(s * 0.18, 0, 1.75);
+        const burnerCore = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.5, 10), new THREE.MeshBasicMaterial({ color: 0xfef08a }));
+        burnerCore.rotation.x = Math.PI / 2;
+        burnerCore.position.set(s * 0.18, 0, 1.58);
+        over.add(rail, intake, tailFin, finTip, nozzle, burnerOuter, burnerCore);
+      }
+      over.add(noseCone, body, canopy, mainWing);
       this.centerOverhead[1] = new Instanced(over, SCENERY_POOL_LIMITS.overheadPerCenter, scene, { name: 'c1-over' });
     }
 
     // ========================================================================
-    // #4 CLEAN ENERGY (ชั้น 1): Giant Wind Turbine + Solar Array + Eco Tree Dome
+    // #4 CLEAN ENERGY (ชั้น 1): Textured Wind Turbine w/ Nacelle + Gridded Solar Tracker + Biosphere Dome
     // ========================================================================
     {
+      const ecoTowerSkin = new THREE.MeshPhongMaterial({
+        map: architecturalTowerSkinTexture('#f8fafc', '#4ade80', '#10b981'),
+        shininess: 50,
+      });
+      const foliageMat1 = new THREE.MeshLambertMaterial({ color: 0x16a34a });
+      const foliageMat2 = new THREE.MeshLambertMaterial({ color: 0x4ade80 });
+
       const stat = new THREE.Group();
-      const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.38, 7.6, 12), whiteMat);
-      mast.position.y = 3.8;
-      const solarPanel = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.12, 1.6), new THREE.MeshBasicMaterial({ color: 0x0284c7 }));
-      solarPanel.position.set(2.1, 1.4, 0);
-      solarPanel.rotation.x = 0.45;
-      const solarFrame = new THREE.Mesh(new THREE.BoxGeometry(2.55, 0.08, 1.75), silverMat);
-      solarFrame.position.set(2.1, 1.36, 0);
-      solarFrame.rotation.x = 0.45;
-      const ecoTree = new THREE.Mesh(new THREE.DodecahedronGeometry(1.15, 1), new THREE.MeshLambertMaterial({ color: 0x22c55e }));
-      ecoTree.position.set(-1.9, 1.3, 0);
-      stat.add(mast, solarPanel, solarFrame, ecoTree);
+      const basePad = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.95, 0.55, 16), slateMat);
+      basePad.position.y = 0.28;
+      const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.5, 7.4, 20), ecoTowerSkin);
+      mast.position.y = 3.9;
+      // Horizontal aerodynamic turbine nacelle housing at top of mast
+      const nacelle = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.36, 1.55, 16), ecoTowerSkin);
+      nacelle.rotation.x = Math.PI / 2;
+      nacelle.position.set(0, 7.6, -0.2);
+      const nacelleCap = new THREE.Mesh(new THREE.SphereGeometry(0.36, 12, 12), silverMat);
+      nacelleCap.position.set(0, 7.6, -0.95);
+
+      // Dual-Axis Photovoltaic Solar Tracker with cell grid skin
+      const trackerPost = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.18, 1.45, 12), slateMat);
+      trackerPost.position.set(2.15, 0.72, 0);
+      const solarPanel = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.1, 1.7), solarSkinMat);
+      solarPanel.position.set(2.15, 1.5, 0);
+      solarPanel.rotation.x = 0.48;
+      const solarBack = new THREE.Mesh(new THREE.BoxGeometry(2.58, 0.08, 1.78), silverMat);
+      solarBack.position.set(2.15, 1.44, -0.03);
+      solarBack.rotation.x = 0.48;
+
+      // Geodesic Botanical Biosphere Dome on Left Side
+      const planterBase = new THREE.Mesh(new THREE.CylinderGeometry(1.35, 1.48, 0.45, 16), slateMat);
+      planterBase.position.set(-2.1, 0.22, 0);
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.22, 1.1, 10), new THREE.MeshLambertMaterial({ color: 0x78350f }));
+      trunk.position.set(-2.1, 0.8, 0);
+      const crown1 = new THREE.Mesh(new THREE.SphereGeometry(0.75, 12, 12), foliageMat1);
+      crown1.position.set(-2.1, 1.55, 0);
+      const crown2 = new THREE.Mesh(new THREE.SphereGeometry(0.55, 12, 12), foliageMat2);
+      crown2.position.set(-1.7, 1.35, 0.35);
+      const crown3 = new THREE.Mesh(new THREE.SphereGeometry(0.5, 12, 12), foliageMat2);
+      crown3.position.set(-2.45, 1.3, -0.25);
+      const bioCage = new THREE.Mesh(
+        new THREE.IcosahedronGeometry(1.32, 1),
+        new THREE.MeshBasicMaterial({ color: 0x4ade80, wireframe: true }),
+      );
+      bioCage.position.set(-2.1, 1.15, 0);
+
+      stat.add(
+        basePad, mast, nacelle, nacelleCap,
+        trackerPost, solarPanel, solarBack,
+        planterBase, trunk, crown1, crown2, crown3, bioCage,
+      );
       this.centerStatic[4] = new Instanced(stat, SCENERY_POOL_LIMITS.staticPerCenter, scene, { name: 'c4-stat' });
 
+      // Contoured 3-Blade Wind Turbine Rotor
       const kin = new THREE.Group();
-      const hub = new THREE.Mesh(new THREE.SphereGeometry(0.38, 10, 10), new THREE.MeshBasicMaterial({ color: 0x4ade80 }));
-      kin.add(hub);
+      const spinner = new THREE.Mesh(new THREE.ConeGeometry(0.42, 0.85, 16), ecoTowerSkin);
+      spinner.rotation.x = Math.PI / 2;
+      spinner.position.z = 0.65;
+      const hubRing = new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.06, 8, 20), new THREE.MeshBasicMaterial({ color: 0x4ade80 }));
+      hubRing.position.z = 0.35;
+      kin.add(spinner, hubRing);
       for (let i = 0; i < 3; i++) {
-        const blade = new THREE.Mesh(new THREE.BoxGeometry(0.24, 3.1, 0.08), whiteMat);
-        blade.rotation.z = (i * Math.PI * 2) / 3;
-        blade.translateY(1.55);
-        const tip = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.55, 0.1), new THREE.MeshBasicMaterial({ color: 0x4ade80 }));
-        tip.rotation.z = (i * Math.PI * 2) / 3;
-        tip.translateY(2.85);
-        kin.add(blade, tip);
+        const ang = (i * Math.PI * 2) / 3;
+        const rootCyl = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 0.7, 10), silverMat);
+        rootCyl.rotation.z = ang;
+        rootCyl.translateY(0.55);
+        rootCyl.position.z = 0.35;
+        const blade = new THREE.Mesh(new THREE.BoxGeometry(0.28, 2.75, 0.07), whiteMat);
+        blade.rotation.z = ang;
+        blade.translateY(1.75);
+        blade.position.z = 0.35;
+        const tip = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.55, 0.08), new THREE.MeshBasicMaterial({ color: 0x10b981 }));
+        tip.rotation.z = ang;
+        tip.translateY(3.15);
+        tip.position.z = 0.35;
+        kin.add(rootCyl, blade, tip);
       }
       this.centerKinetic[4] = new Instanced(kin, SCENERY_POOL_LIMITS.kineticPerCenter, scene, { name: 'c4-kin' });
 
+      // Multi-puff Cumulus Sky Clouds
       const over = new THREE.Group();
-      const c1 = new THREE.Mesh(new THREE.SphereGeometry(1.2, 10, 10), whiteMat);
-      const c2 = new THREE.Mesh(new THREE.SphereGeometry(0.9, 10, 10), whiteMat);
-      c2.position.set(1.1, -0.15, 0);
-      const c3 = new THREE.Mesh(new THREE.SphereGeometry(0.85, 10, 10), whiteMat);
-      c3.position.set(-1.0, -0.2, 0);
-      over.add(c1, c2, c3);
+      const c1 = new THREE.Mesh(new THREE.SphereGeometry(1.25, 14, 14), whiteMat);
+      const c2 = new THREE.Mesh(new THREE.SphereGeometry(0.95, 14, 14), whiteMat);
+      c2.position.set(1.15, -0.15, 0.2);
+      const c3 = new THREE.Mesh(new THREE.SphereGeometry(0.9, 14, 14), whiteMat);
+      c3.position.set(-1.05, -0.2, -0.15);
+      const c4 = new THREE.Mesh(new THREE.SphereGeometry(0.75, 12, 12), whiteMat);
+      c4.position.set(0.35, 0.45, -0.4);
+      over.add(c1, c2, c3, c4);
       this.centerOverhead[4] = new Instanced(over, SCENERY_POOL_LIMITS.overheadPerCenter, scene, { name: 'c4-over' });
     }
 
     // ========================================================================
-    // #5 DIGITAL 5G & AI (ชั้น 1): 5G Lattice Cell Tower + AI Server Monolith + Signal Rings
+    // #5 DIGITAL 5G & AI (ชั้น 1): 5G Massive-MIMO Sector Tower + Detailed Server Rack Monolith
     // ========================================================================
     {
+      const telecomSkin = new THREE.MeshPhongMaterial({
+        map: architecturalTowerSkinTexture('#334155', '#c084fc', '#38bdf8'),
+        shininess: 60,
+      });
+      const serverSkin = new THREE.MeshPhongMaterial({
+        map: serverRackSkinTexture('#c084fc'),
+        emissive: 0x2e1065,
+        emissiveIntensity: 0.4,
+        shininess: 90,
+      });
+
       const stat = new THREE.Group();
-      const spire = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.55, 7.8, 6), slateMat);
-      spire.position.y = 3.9;
-      for (let h = 2; h <= 6; h += 2) {
-        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.65 - h * 0.05, 0.06, 6, 16), new THREE.MeshBasicMaterial({ color: 0xc084fc }));
-        ring.rotation.x = Math.PI / 2;
-        ring.position.y = h;
-        stat.add(ring);
+      const towerBase = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.95, 1.2, 12), darkMat);
+      towerBase.position.y = 0.6;
+      const spire = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.58, 7.6, 12), telecomSkin);
+      spire.position.y = 4.2;
+
+      // Two maintenance catwalk platforms + 3 Massive-MIMO 5G sector antenna panels at 120 deg!
+      for (const h of [3.8, 6.2]) {
+        const deck = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 0.95, 0.14, 12), slateMat);
+        deck.position.y = h;
+        const neonRim = new THREE.Mesh(new THREE.TorusGeometry(0.98, 0.05, 8, 24), new THREE.MeshBasicMaterial({ color: 0xc084fc }));
+        neonRim.rotation.x = Math.PI / 2;
+        neonRim.position.y = h;
+        stat.add(deck, neonRim);
+
+        for (let k = 0; k < 3; k++) {
+          const a = (k * Math.PI * 2) / 3;
+          const mimoPanel = new THREE.Mesh(new THREE.BoxGeometry(0.32, 1.35, 0.16), whiteMat);
+          mimoPanel.position.set(Math.cos(a) * 0.92, h + 0.45, Math.sin(a) * 0.92);
+          mimoPanel.rotation.y = -a + Math.PI / 2;
+          const mimoStrip = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.2, 0.18), new THREE.MeshBasicMaterial({ color: 0xc084fc }));
+          mimoStrip.position.set(Math.cos(a) * 0.94, h + 0.45, Math.sin(a) * 0.94);
+          mimoStrip.rotation.y = -a + Math.PI / 2;
+          stat.add(mimoPanel, mimoStrip);
+        }
       }
-      const serverBox = new THREE.Mesh(new THREE.BoxGeometry(1.4, 3.8, 1.4), darkMat);
-      serverBox.position.set(2.0, 1.9, 0);
-      const serverGlow = new THREE.Mesh(new THREE.BoxGeometry(1.46, 0.25, 1.46), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
-      serverGlow.position.set(2.0, 3.1, 0);
-      stat.add(spire, serverBox, serverGlow);
+      // Microwave backhaul drum dish
+      const mwDish = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.48, 0.26, 16), whiteMat);
+      mwDish.rotation.z = Math.PI / 2;
+      mwDish.position.set(0.55, 5.0, 0);
+
+      // High-density AI Server Rack Monolith with blade bay texture
+      const serverPlinth = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.35, 1.75), slateMat);
+      serverPlinth.position.set(2.15, 0.18, 0);
+      const serverBox = new THREE.Mesh(new THREE.BoxGeometry(1.48, 4.1, 1.48), serverSkin);
+      serverBox.position.set(2.15, 2.35, 0);
+      const serverCap = new THREE.Mesh(new THREE.BoxGeometry(1.62, 0.24, 1.62), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
+      serverCap.position.set(2.15, 4.48, 0);
+
+      stat.add(towerBase, spire, mwDish, serverPlinth, serverBox, serverCap);
       this.centerStatic[5] = new Instanced(stat, SCENERY_POOL_LIMITS.staticPerCenter, scene, { name: 'c5-stat' });
 
       const kin = new THREE.Group();
-      const wave1 = new THREE.Mesh(new THREE.TorusGeometry(1.2, 0.07, 8, 24), new THREE.MeshBasicMaterial({ color: 0xc084fc }));
-      const wave2 = new THREE.Mesh(new THREE.TorusGeometry(1.85, 0.05, 8, 24), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
+      const wave1 = new THREE.Mesh(new THREE.TorusGeometry(1.25, 0.06, 10, 28), new THREE.MeshBasicMaterial({ color: 0xc084fc }));
+      const wave2 = new THREE.Mesh(new THREE.TorusGeometry(1.85, 0.05, 10, 28), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
       wave2.rotation.y = Math.PI / 2;
-      const coreNode = new THREE.Mesh(new THREE.OctahedronGeometry(0.48, 0), new THREE.MeshBasicMaterial({ color: 0xf0abfc }));
+      const coreNode = new THREE.Mesh(new THREE.OctahedronGeometry(0.52, 1), new THREE.MeshPhongMaterial({ color: 0xf0abfc, emissive: 0x9333ea, shininess: 100 }));
       kin.add(wave1, wave2, coreNode);
       this.centerKinetic[5] = new Instanced(kin, SCENERY_POOL_LIMITS.kineticPerCenter, scene, { name: 'c5-kin' });
 
       const over = new THREE.Group();
-      const dataCube = new THREE.Mesh(new THREE.OctahedronGeometry(0.95, 0), new THREE.MeshBasicMaterial({ color: 0xc084fc, wireframe: true }));
-      over.add(dataCube);
+      const innerCore = new THREE.Mesh(new THREE.OctahedronGeometry(0.62, 0), new THREE.MeshPhongMaterial({ color: 0x38bdf8, emissive: 0x0284c7 }));
+      const outerCage = new THREE.Mesh(new THREE.OctahedronGeometry(1.05, 0), new THREE.MeshBasicMaterial({ color: 0xc084fc, wireframe: true }));
+      const dataRing = new THREE.Mesh(new THREE.TorusGeometry(1.2, 0.04, 8, 24), new THREE.MeshBasicMaterial({ color: 0xf0abfc }));
+      dataRing.rotation.x = Math.PI / 3;
+      over.add(innerCore, outerCage, dataRing);
       this.centerOverhead[5] = new Instanced(over, SCENERY_POOL_LIMITS.overheadPerCenter, scene, { name: 'c5-over' });
     }
 
     // ========================================================================
-    // #3 RAIL & EV (ชั้น 1): Golden Maglev Supercharger Pylon + Hyperloop Tube Arches
+    // #3 RAIL & EV (ชั้น 1): Textured Maglev Station Pylon + EV Supercharger Kiosk + Hyperloop Tube Arch
     // ========================================================================
     {
+      const maglevSkin = new THREE.MeshPhongMaterial({
+        map: architecturalTowerSkinTexture('#1e293b', '#facc15', '#f59e0b'),
+        shininess: 70,
+      });
+
       const stat = new THREE.Group();
-      const pylon = new THREE.Mesh(new THREE.BoxGeometry(0.9, 5.4, 1.5), slateMat);
-      pylon.position.y = 2.7;
-      const goldTrim = new THREE.Mesh(new THREE.BoxGeometry(0.96, 5.0, 0.35), new THREE.MeshBasicMaterial({ color: 0xfacc15 }));
-      goldTrim.position.set(0, 2.7, 0.65);
-      const canopy = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.28, 2.2), whiteMat);
-      canopy.position.set(-0.6, 5.5, 0);
-      canopy.rotation.z = 0.22;
-      stat.add(pylon, goldTrim, canopy);
+      const pylonBase = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.5, 1.9), darkMat);
+      pylonBase.position.y = 0.25;
+      const pylon = new THREE.Mesh(new THREE.BoxGeometry(0.95, 5.4, 1.55), maglevSkin);
+      pylon.position.y = 3.0;
+      const goldSpine = new THREE.Mesh(new THREE.BoxGeometry(0.32, 5.2, 1.68), new THREE.MeshBasicMaterial({ color: 0xfacc15 }));
+      goldSpine.position.set(0, 3.0, 0);
+      // Aerodynamic cantilevered Maglev station roof canopy
+      const canopy = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.4, 2.8, 16, 1, false, 0, Math.PI), whiteMat);
+      canopy.rotation.z = Math.PI / 2 + 0.18;
+      canopy.position.set(-0.65, 5.35, 0);
+      const canopyLight = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.12, 2.4), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
+      canopyLight.position.set(-0.65, 5.25, 0);
+      canopyLight.rotation.z = 0.18;
+
+      // EV Ultra-Fast Supercharger Kiosk on side
+      const kioskFrame = new THREE.Mesh(new THREE.BoxGeometry(0.85, 2.5, 0.45), whiteMat);
+      kioskFrame.position.set(2.0, 1.25, 0);
+      const kioskScreen = new THREE.Mesh(new THREE.BoxGeometry(0.58, 1.45, 0.5), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
+      kioskScreen.position.set(2.0, 1.35, 0);
+      const kioskTop = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.28, 0.52), new THREE.MeshBasicMaterial({ color: 0xfacc15 }));
+      kioskTop.position.set(2.0, 2.55, 0);
+
+      stat.add(pylonBase, pylon, goldSpine, canopy, canopyLight, kioskFrame, kioskScreen, kioskTop);
       this.centerStatic[3] = new Instanced(stat, SCENERY_POOL_LIMITS.staticPerCenter, scene, { name: 'c3-stat' });
 
       const kin = new THREE.Group();
-      const gyro1 = new THREE.Mesh(new THREE.TorusGeometry(0.95, 0.09, 8, 20), new THREE.MeshBasicMaterial({ color: 0xfacc15 }));
-      const gyro2 = new THREE.Mesh(new THREE.TorusGeometry(0.65, 0.08, 8, 20), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
-      gyro2.rotation.x = Math.PI / 2;
-      kin.add(gyro1, gyro2);
+      const statorOuter = new THREE.Mesh(new THREE.TorusGeometry(1.05, 0.12, 12, 24), slateMat);
+      const gyroGold = new THREE.Mesh(new THREE.TorusGeometry(0.85, 0.08, 10, 24), new THREE.MeshBasicMaterial({ color: 0xfacc15 }));
+      const gyroCyan = new THREE.Mesh(new THREE.TorusGeometry(0.58, 0.07, 10, 20), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
+      gyroCyan.rotation.x = Math.PI / 2;
+      const fluxHub = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 12), new THREE.MeshBasicMaterial({ color: 0xfef08a }));
+      kin.add(statorOuter, gyroGold, gyroCyan, fluxHub);
       this.centerKinetic[3] = new Instanced(kin, SCENERY_POOL_LIMITS.kineticPerCenter, scene, { name: 'c3-kin' });
 
+      // Double-Ribbed Hyperloop Vacuum Tube Arch spanning over track
       const over = new THREE.Group();
-      const archRing = new THREE.Mesh(
-        new THREE.TorusGeometry(5.4, 0.16, 10, 32, Math.PI),
-        new THREE.MeshBasicMaterial({ color: 0xfacc15 }),
-      );
-      over.add(archRing);
+      const steelArch1 = new THREE.Mesh(new THREE.TorusGeometry(5.5, 0.18, 12, 36, Math.PI), slateMat);
+      steelArch1.position.z = -0.35;
+      const steelArch2 = new THREE.Mesh(new THREE.TorusGeometry(5.5, 0.18, 12, 36, Math.PI), slateMat);
+      steelArch2.position.z = 0.35;
+      const neonArch = new THREE.Mesh(new THREE.TorusGeometry(5.32, 0.12, 10, 36, Math.PI), new THREE.MeshBasicMaterial({ color: 0xfacc15 }));
+      const topCatenary = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.35, 1.1), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
+      topCatenary.position.set(0, 5.5, 0);
+      over.add(steelArch1, steelArch2, neonArch, topCatenary);
       this.centerOverhead[3] = new Instanced(over, SCENERY_POOL_LIMITS.overheadPerCenter, scene, { name: 'c3-over' });
     }
 
     // ========================================================================
-    // #2 ROBOTICS (ชั้น 2-6): Articulated Industrial Robot Arm + Laser Gantry
+    // #2 ROBOTICS (ชั้น 2-6): Textured 6-Axis Industrial Robot Arm + Hydraulic Pistons + CNC Gantry
     // ========================================================================
     {
+      const robotSkin = new THREE.MeshPhongMaterial({
+        map: architecturalTowerSkinTexture('#fb923c', '#facc15', '#0f172a'),
+        shininess: 75,
+      });
+
       const stat = new THREE.Group();
-      const ped = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 1.15, 1.2, 8), slateMat);
-      ped.position.y = 0.6;
-      const shoulder = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.1, 0.9), new THREE.MeshBasicMaterial({ color: 0xfb923c }));
-      shoulder.position.y = 1.6;
-      const lowerBoom = new THREE.Mesh(new THREE.BoxGeometry(0.48, 3.4, 0.48), whiteMat);
-      lowerBoom.position.set(0, 3.5, 0);
-      lowerBoom.rotation.z = 0.18;
-      stat.add(ped, shoulder, lowerBoom);
+      // Heavy cast-iron rotary turret base
+      const basePlate = new THREE.Mesh(new THREE.CylinderGeometry(1.25, 1.4, 0.45, 16), darkMat);
+      basePlate.position.y = 0.22;
+      const rotaryTurret = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 1.1, 0.95, 16), slateMat);
+      rotaryTurret.position.y = 0.9;
+      // Shoulder yoke + large horizontal servo motor drum
+      const shoulderYoke = new THREE.Mesh(new THREE.BoxGeometry(1.05, 1.25, 1.05), robotSkin);
+      shoulderYoke.position.y = 1.85;
+      const servoDrum = new THREE.Mesh(new THREE.CylinderGeometry(0.52, 0.52, 1.45, 16), darkMat);
+      servoDrum.rotation.x = Math.PI / 2;
+      servoDrum.position.set(0, 2.0, 0);
+      const servoCap = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 1.55, 12), new THREE.MeshBasicMaterial({ color: 0xfacc15 }));
+      servoCap.rotation.x = Math.PI / 2;
+      servoCap.position.set(0, 2.0, 0);
+      // Twin contoured lower boom struts + hydraulic piston cylinder
+      for (const zOff of [-0.28, 0.28]) {
+        const strut = new THREE.Mesh(new THREE.BoxGeometry(0.46, 3.3, 0.22), robotSkin);
+        strut.position.set(0.15, 3.55, zOff);
+        strut.rotation.z = -0.15;
+        stat.add(strut);
+      }
+      const pistonCyl = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 1.9, 12), slateMat);
+      pistonCyl.position.set(-0.45, 2.6, 0);
+      pistonCyl.rotation.z = -0.28;
+      const pistonRod = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 1.6, 10), silverMat);
+      pistonRod.position.set(-0.22, 3.6, 0);
+      pistonRod.rotation.z = -0.28;
+
+      // Side Smart-Factory Workcell Pedestal
+      const cellPed = new THREE.Mesh(new THREE.CylinderGeometry(0.65, 0.75, 1.4, 12), slateMat);
+      cellPed.position.set(-2.0, 0.7, 0);
+      const holoGear = new THREE.Mesh(new THREE.TorusGeometry(0.45, 0.1, 8, 16), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
+      holoGear.rotation.x = Math.PI / 2;
+      holoGear.position.set(-2.0, 1.55, 0);
+
+      stat.add(basePlate, rotaryTurret, shoulderYoke, servoDrum, servoCap, pistonCyl, pistonRod, cellPed, holoGear);
       this.centerStatic[2] = new Instanced(stat, SCENERY_POOL_LIMITS.staticPerCenter, scene, { name: 'c2-stat' });
 
+      // Articulated Robot Forearm + 3-Finger Precision Gripper + Laser Welder Tip
       const kin = new THREE.Group();
-      const joint = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.7, 10), new THREE.MeshBasicMaterial({ color: 0xfacc15 }));
-      joint.rotation.x = Math.PI / 2;
-      const forearm = new THREE.Mesh(new THREE.BoxGeometry(0.38, 2.6, 0.38), new THREE.MeshBasicMaterial({ color: 0xfb923c }));
-      forearm.position.set(-0.6, 1.1, 0);
-      forearm.rotation.z = 0.55;
-      const claw = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.1, 8, 16, Math.PI * 1.4), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
-      claw.position.set(-1.35, 2.2, 0);
-      kin.add(joint, forearm, claw);
+      const elbowDrum = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.46, 0.95, 16), darkMat);
+      elbowDrum.rotation.x = Math.PI / 2;
+      const elbowRing = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 1.02, 12), new THREE.MeshBasicMaterial({ color: 0xfacc15 }));
+      elbowRing.rotation.x = Math.PI / 2;
+      const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.36, 2.6, 14), robotSkin);
+      forearm.position.set(-0.62, 1.12, 0);
+      forearm.rotation.z = 0.52;
+      const wristMotor = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.45, 12), slateMat);
+      wristMotor.position.set(-1.25, 2.15, 0);
+      wristMotor.rotation.z = 0.52;
+      const clawJaw = new THREE.Mesh(new THREE.TorusGeometry(0.48, 0.09, 10, 20, Math.PI * 1.45), silverMat);
+      clawJaw.position.set(-1.52, 2.48, 0);
+      const laserTip = new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 12), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
+      laserTip.position.set(-1.52, 2.48, 0);
+      kin.add(elbowDrum, elbowRing, forearm, wristMotor, clawJaw, laserTip);
       this.centerKinetic[2] = new Instanced(kin, SCENERY_POOL_LIMITS.kineticPerCenter, scene, { name: 'c2-kin' });
 
+      // Overhead CNC Laser Gantry Bridge
       const over = new THREE.Group();
-      const beam = new THREE.Mesh(new THREE.BoxGeometry(9.6, 0.35, 0.45), slateMat);
-      const laser = new THREE.Mesh(new THREE.BoxGeometry(9.2, 0.12, 0.16), new THREE.MeshBasicMaterial({ color: 0xfb923c }));
-      laser.position.y = -0.24;
-      over.add(beam, laser);
+      const mainBeam = new THREE.Mesh(new THREE.BoxGeometry(9.8, 0.42, 0.55), robotSkin);
+      const topRail = new THREE.Mesh(new THREE.BoxGeometry(9.8, 0.16, 0.68), darkMat);
+      topRail.position.y = 0.26;
+      const carriage = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.65, 0.78), slateMat);
+      const laserBar = new THREE.Mesh(new THREE.BoxGeometry(9.4, 0.1, 0.18), new THREE.MeshBasicMaterial({ color: 0xfb923c }));
+      laserBar.position.y = -0.26;
+      over.add(mainBeam, topRail, carriage, laserBar);
       this.centerOverhead[2] = new Instanced(over, SCENERY_POOL_LIMITS.overheadPerCenter, scene, { name: 'c2-over' });
     }
 
     // ========================================================================
-    // #6 WEATHER RADAR (ชั้น 8): Geodesic Radome Tower + Spinning Doppler Dish + Rain Clouds
+    // #6 WEATHER RADAR (ชั้น 8): Observatory Tower + Solid-Core Geodesic Radome + Parabolic Dish
     // ========================================================================
     {
+      const radarTowerSkin = new THREE.MeshPhongMaterial({
+        map: architecturalTowerSkinTexture('#f8fafc', '#2dd4bf', '#0d9488'),
+        shininess: 60,
+      });
+
       const stat = new THREE.Group();
-      const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.65, 1.05, 4.4, 10), whiteMat);
-      tower.position.y = 2.2;
-      const radome = new THREE.Mesh(new THREE.IcosahedronGeometry(1.45, 1), new THREE.MeshBasicMaterial({ color: 0x2dd4bf, wireframe: true }));
-      radome.position.set(2.1, 1.6, 0);
-      stat.add(tower, radome);
+      const towerFoot = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.3, 0.6, 16), slateMat);
+      towerFoot.position.y = 0.3;
+      const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 1.08, 4.4, 16), radarTowerSkin);
+      tower.position.y = 2.5;
+      const obsDeck = new THREE.Mesh(new THREE.CylinderGeometry(1.25, 0.9, 0.42, 16), darkMat);
+      obsDeck.position.y = 4.7;
+      const deckRim = new THREE.Mesh(new THREE.TorusGeometry(1.26, 0.05, 8, 24), new THREE.MeshBasicMaterial({ color: 0x2dd4bf }));
+      deckRim.rotation.x = Math.PI / 2;
+      deckRim.position.y = 4.85;
+
+      // Secondary Soccer-Ball Geodesic Radome (Solid white sphere core + teal geodesic frame lattice!)
+      const radomePed = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 1.05, 1.2, 14), radarTowerSkin);
+      radomePed.position.set(2.2, 0.6, 0);
+      const radomeCore = new THREE.Mesh(new THREE.SphereGeometry(1.28, 18, 18), whiteMat);
+      radomeCore.position.set(2.2, 2.15, 0);
+      const radomeLattice = new THREE.Mesh(
+        new THREE.IcosahedronGeometry(1.32, 1),
+        new THREE.MeshBasicMaterial({ color: 0x0d9488, wireframe: true }),
+      );
+      radomeLattice.position.set(2.2, 2.15, 0);
+
+      stat.add(towerFoot, tower, obsDeck, deckRim, radomePed, radomeCore, radomeLattice);
       this.centerStatic[6] = new Instanced(stat, SCENERY_POOL_LIMITS.staticPerCenter, scene, { name: 'c6-stat' });
 
+      // Parabolic Doppler Radar Dish with Yoke Mount & 3 Tripod Feedhorn Struts
       const kin = new THREE.Group();
-      const dish = new THREE.Mesh(new THREE.ConeGeometry(1.45, 0.75, 16, 1, true), whiteMat);
+      const yoke = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.42, 0.55, 12), slateMat);
+      yoke.position.y = -0.2;
+      const dishBacking = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.3, 0.35, 14), slateMat);
+      dishBacking.rotation.z = Math.PI / 3;
+      dishBacking.position.set(-0.15, 0.05, 0);
+      const dish = new THREE.Mesh(
+        new THREE.ConeGeometry(1.48, 0.72, 24, 1, true),
+        new THREE.MeshPhongMaterial({ color: 0xf8fafc, side: THREE.DoubleSide, shininess: 70 }),
+      );
       dish.rotation.z = Math.PI / 3;
-      const feedHorn = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 1.1, 8), new THREE.MeshBasicMaterial({ color: 0x2dd4bf }));
+      const dishRim = new THREE.Mesh(new THREE.TorusGeometry(1.46, 0.05, 8, 24), new THREE.MeshBasicMaterial({ color: 0x2dd4bf }));
+      dishRim.rotation.y = Math.PI / 2;
+      dishRim.rotation.x = Math.PI / 6;
+      dishRim.position.set(0.3, 0.18, 0);
+      // Tripod feedhorn + LNB focal pod
+      const feedHorn = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.12, 1.15, 10), slateMat);
       feedHorn.rotation.z = -Math.PI / 6;
-      feedHorn.position.set(0.45, 0.3, 0);
-      const scanRing = new THREE.Mesh(new THREE.TorusGeometry(1.5, 0.06, 8, 24), new THREE.MeshBasicMaterial({ color: 0x2dd4bf }));
-      scanRing.rotation.x = Math.PI / 2;
-      kin.add(dish, feedHorn, scanRing);
+      feedHorn.position.set(0.48, 0.28, 0);
+      const lnbPod = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 12), new THREE.MeshBasicMaterial({ color: 0x2dd4bf }));
+      lnbPod.position.set(0.92, 0.54, 0);
+      const scanWave = new THREE.Mesh(new THREE.TorusGeometry(1.6, 0.04, 8, 28), new THREE.MeshBasicMaterial({ color: 0x2dd4bf }));
+      scanWave.rotation.x = Math.PI / 2;
+      kin.add(yoke, dishBacking, dish, dishRim, feedHorn, lnbPod, scanWave);
       this.centerKinetic[6] = new Instanced(kin, SCENERY_POOL_LIMITS.kineticPerCenter, scene, { name: 'c6-kin' });
 
+      // Storm Cloud + Suspended Weather Sonde Instrument Pod
       const over = new THREE.Group();
-      const cl1 = new THREE.Mesh(new THREE.SphereGeometry(1.3, 10, 10), whiteMat);
-      const cl2 = new THREE.Mesh(new THREE.SphereGeometry(0.95, 10, 10), whiteMat);
-      cl2.position.set(1.15, -0.1, 0);
-      const rainStreak = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.8, 6), new THREE.MeshBasicMaterial({ color: 0x2dd4bf }));
-      rainStreak.position.set(0.4, -1.6, 0);
-      over.add(cl1, cl2, rainStreak);
+      const cl1 = new THREE.Mesh(new THREE.SphereGeometry(1.3, 14, 14), whiteMat);
+      const cl2 = new THREE.Mesh(new THREE.SphereGeometry(0.98, 14, 14), whiteMat);
+      cl2.position.set(1.15, -0.1, 0.15);
+      const cl3 = new THREE.Mesh(new THREE.SphereGeometry(0.88, 14, 14), silverMat);
+      cl3.position.set(-1.0, -0.18, -0.1);
+      const tether = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 1.5, 6), silverMat);
+      tether.position.set(0.2, -1.2, 0);
+      const sondePod = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.12, 0.38, 10), new THREE.MeshBasicMaterial({ color: 0x2dd4bf }));
+      sondePod.position.set(0.2, -1.95, 0);
+      over.add(cl1, cl2, cl3, tether, sondePod);
       this.centerOverhead[6] = new Instanced(over, SCENERY_POOL_LIMITS.overheadPerCenter, scene, { name: 'c6-over' });
     }
 
     // ========================================================================
-    // #7 BIO-MATERIALS (ชั้น 8): Bioreactor Column + Spinning 3D Double-Helix DNA + Molecule
+    // #7 BIO-MATERIALS (ชั้น 8): Textured Photobioreactor Vessel + Piping + 3D Double-Helix DNA
     // ========================================================================
     {
+      const bioTankSkin = new THREE.MeshPhongMaterial({
+        map: bioreactorSkinTexture('#4ade80'),
+        emissive: 0x15803d,
+        emissiveIntensity: 0.45,
+        shininess: 95,
+      });
+
       const stat = new THREE.Group();
-      const base = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.3, 0.9, 6), slateMat);
-      base.position.y = 0.45;
-      const cap = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 0.5, 6), slateMat);
-      cap.position.y = 6.8;
-      const glassCore = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 6.0, 12), new THREE.MeshBasicMaterial({ color: 0x4ade80 }));
-      glassCore.position.set(2.0, 3.0, 0);
-      stat.add(base, cap, glassCore);
+      // Main DNA Display Pedestal & Crown Manifold
+      const dnaBase = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.35, 0.85, 16), slateMat);
+      dnaBase.position.y = 0.42;
+      const dnaBaseRim = new THREE.Mesh(new THREE.TorusGeometry(1.16, 0.06, 8, 24), new THREE.MeshBasicMaterial({ color: 0xa3e635 }));
+      dnaBaseRim.rotation.x = Math.PI / 2;
+      dnaBaseRim.position.y = 0.85;
+      const dnaCap = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.15, 0.48, 16), slateMat);
+      dnaCap.position.y = 6.95;
+
+      // Detailed Photobioreactor Vessel on Side with Stainless Manifolds & External Piping
+      const reactorBase = new THREE.Mesh(new THREE.CylinderGeometry(0.78, 0.9, 0.75, 16), silverMat);
+      reactorBase.position.set(2.15, 0.38, 0);
+      const glassVessel = new THREE.Mesh(new THREE.CylinderGeometry(0.68, 0.68, 5.2, 20), bioTankSkin);
+      glassVessel.position.set(2.15, 3.3, 0);
+      const reactorDome = new THREE.Mesh(new THREE.SphereGeometry(0.7, 16, 12), silverMat);
+      reactorDome.position.set(2.15, 5.9, 0);
+      for (let k = 0; k < 3; k++) {
+        const a = (k * Math.PI * 2) / 3;
+        const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 5.4, 8), silverMat);
+        pipe.position.set(2.15 + Math.cos(a) * 0.78, 3.3, Math.sin(a) * 0.78);
+        stat.add(pipe);
+      }
+
+      stat.add(dnaBase, dnaBaseRim, dnaCap, reactorBase, glassVessel, reactorDome);
       this.centerStatic[7] = new Instanced(stat, SCENERY_POOL_LIMITS.staticPerCenter, scene, { name: 'c7-stat' });
 
+      // Rich 3D Double-Helix DNA with Two-Tone Base Pairs & Continuous Sugar-Phosphate Backbones
       const kin = new THREE.Group();
-      for (let i = 0; i < 8; i++) {
-        const y = -2.2 + i * 0.65;
-        const ang = i * 0.75;
-        const x1 = Math.cos(ang) * 0.85;
-        const z1 = Math.sin(ang) * 0.85;
-        const n1 = new THREE.Mesh(new THREE.SphereGeometry(0.24, 8, 8), new THREE.MeshBasicMaterial({ color: 0xa3e635 }));
-        n1.position.set(x1, y, z1);
-        const n2 = new THREE.Mesh(new THREE.SphereGeometry(0.24, 8, 8), new THREE.MeshBasicMaterial({ color: 0x2dd4bf }));
-        n2.position.set(-x1, y, -z1);
-        const rung = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.08, 0.08), whiteMat);
-        rung.position.set(0, y, 0);
-        rung.rotation.y = -ang;
-        kin.add(n1, n2, rung);
+      const limeMat = new THREE.MeshPhongMaterial({ color: 0xa3e635, emissive: 0x3f6212, shininess: 90 });
+      const tealMat = new THREE.MeshPhongMaterial({ color: 0x2dd4bf, emissive: 0x115e59, shininess: 90 });
+      const levels = 9;
+      for (let i = 0; i < levels; i++) {
+        const y = -2.3 + i * 0.58;
+        const ang = i * 0.68;
+        const r = 0.88;
+        const x1 = Math.cos(ang) * r;
+        const z1 = Math.sin(ang) * r;
+
+        const node1 = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 12), limeMat);
+        node1.position.set(x1, y, z1);
+        const node2 = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 12), tealMat);
+        node2.position.set(-x1, y, -z1);
+
+        // Two-color cylindrical hydrogen-bond base pair rungs
+        const halfRung1 = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, r, 8), limeMat);
+        halfRung1.rotation.z = Math.PI / 2;
+        halfRung1.position.set(x1 * 0.5, y, z1 * 0.5);
+        halfRung1.rotation.y = -ang;
+
+        const halfRung2 = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, r, 8), tealMat);
+        halfRung2.rotation.z = Math.PI / 2;
+        halfRung2.position.set(-x1 * 0.5, y, -z1 * 0.5);
+        halfRung2.rotation.y = -ang;
+
+        kin.add(node1, node2, halfRung1, halfRung2);
       }
       this.centerKinetic[7] = new Instanced(kin, SCENERY_POOL_LIMITS.kineticPerCenter, scene, { name: 'c7-kin' });
 
+      // 3D Hexagonal Molecular Ring with Atomic Spheres
       const over = new THREE.Group();
-      const hexRing = new THREE.Mesh(new THREE.TorusGeometry(1.1, 0.1, 6, 6), new THREE.MeshBasicMaterial({ color: 0xa3e635 }));
+      const hexRing = new THREE.Mesh(new THREE.TorusGeometry(1.15, 0.07, 10, 6), silverMat);
       over.add(hexRing);
+      for (let k = 0; k < 6; k++) {
+        const a = (k * Math.PI) / 3;
+        const atom = new THREE.Mesh(
+          new THREE.SphereGeometry(0.24, 12, 12),
+          k % 2 === 0 ? limeMat : tealMat,
+        );
+        atom.position.set(Math.cos(a) * 1.15, Math.sin(a) * 1.15, 0);
+        over.add(atom);
+      }
       this.centerOverhead[7] = new Instanced(over, SCENERY_POOL_LIMITS.overheadPerCenter, scene, { name: 'c7-over' });
     }
 
     // ========================================================================
-    // #8 MEDICAL TECH (ชั้น 9): Clean Alabaster Sanctuary Pillar + Rotating 3D Medical Cross
+    // #8 MEDICAL TECH (ชั้น 9): Textured Med-Tech MRI Pavilion + Vital Kiosk + Beveled 3D Medical Cross
     // ========================================================================
     {
+      const medTowerSkin = new THREE.MeshPhongMaterial({
+        map: architecturalTowerSkinTexture('#f8fafc', '#fb7185', '#e11d48'),
+        shininess: 80,
+      });
+      const roseChromeMat = new THREE.MeshPhongMaterial({
+        color: 0xfb7185,
+        emissive: 0x881337,
+        emissiveIntensity: 0.4,
+        shininess: 100,
+      });
+
       const stat = new THREE.Group();
-      const col = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.75, 3.8, 12), whiteMat);
-      col.position.y = 1.9;
-      const trim = new THREE.Mesh(new THREE.TorusGeometry(0.72, 0.09, 8, 20), new THREE.MeshBasicMaterial({ color: 0xfb7185 }));
+      const baseStep = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.25, 0.5, 16), whiteMat);
+      baseStep.position.y = 0.25;
+      const col = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.82, 3.8, 16), medTowerSkin);
+      col.position.y = 2.15;
+      const capCollar = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 0.72, 0.45, 16), whiteMat);
+      capCollar.position.y = 4.1;
+      const trim = new THREE.Mesh(new THREE.TorusGeometry(0.96, 0.07, 10, 24), roseChromeMat);
       trim.rotation.x = Math.PI / 2;
-      trim.position.y = 3.7;
-      const ecgPillar = new THREE.Mesh(new THREE.BoxGeometry(0.35, 5.2, 0.35), new THREE.MeshBasicMaterial({ color: 0xfb7185 }));
-      ecgPillar.position.set(2.0, 2.6, 0);
-      stat.add(col, trim, ecgPillar);
+      trim.position.y = 4.25;
+
+      // Side Bio-Scanner / ECG Telemetry Kiosk
+      const kioskStand = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.5, 1.1, 12), silverMat);
+      kioskStand.position.set(2.1, 0.55, 0);
+      const ecgMonolith = new THREE.Mesh(new THREE.BoxGeometry(0.45, 3.8, 1.15), medTowerSkin);
+      ecgMonolith.position.set(2.1, 2.8, 0);
+      const ecgRing = new THREE.Mesh(new THREE.TorusGeometry(0.75, 0.08, 10, 24), roseChromeMat);
+      ecgRing.rotation.y = Math.PI / 2;
+      ecgRing.position.set(1.75, 2.8, 0);
+
+      stat.add(baseStep, col, capCollar, trim, kioskStand, ecgMonolith, ecgRing);
       this.centerStatic[8] = new Instanced(stat, SCENERY_POOL_LIMITS.staticPerCenter, scene, { name: 'c8-stat' });
 
+      // Beveled Multi-Layered 3D Medical Cross with Chrome Trim & Gyro Rings
       const kin = new THREE.Group();
-      const crossV = new THREE.Mesh(new THREE.BoxGeometry(0.55, 1.85, 0.45), new THREE.MeshBasicMaterial({ color: 0xfb7185 }));
-      const crossH = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.55, 0.45), new THREE.MeshBasicMaterial({ color: 0xfb7185 }));
-      const haloRing = new THREE.Mesh(new THREE.TorusGeometry(1.35, 0.08, 8, 24), whiteMat);
-      kin.add(crossV, crossH, haloRing);
+      const outerV = new THREE.Mesh(new THREE.BoxGeometry(0.68, 2.0, 0.36), whiteMat);
+      const outerH = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.68, 0.36), whiteMat);
+      const innerV = new THREE.Mesh(new THREE.BoxGeometry(0.52, 1.82, 0.48), roseChromeMat);
+      const innerH = new THREE.Mesh(new THREE.BoxGeometry(1.82, 0.52, 0.48), roseChromeMat);
+      const centerGem = new THREE.Mesh(new THREE.OctahedronGeometry(0.32, 0), new THREE.MeshBasicMaterial({ color: 0xffe4e6 }));
+      const haloRing1 = new THREE.Mesh(new THREE.TorusGeometry(1.42, 0.07, 10, 28), whiteMat);
+      const haloRing2 = new THREE.Mesh(new THREE.TorusGeometry(1.62, 0.045, 8, 28), roseChromeMat);
+      haloRing2.rotation.y = Math.PI / 3;
+      kin.add(outerV, outerH, innerV, innerH, centerGem, haloRing1, haloRing2);
       this.centerKinetic[8] = new Instanced(kin, SCENERY_POOL_LIMITS.kineticPerCenter, scene, { name: 'c8-kin' });
 
       const over = new THREE.Group();
-      const arch = new THREE.Mesh(
-        new THREE.TorusGeometry(5.2, 0.14, 8, 28, Math.PI),
-        new THREE.MeshBasicMaterial({ color: 0xfecdd3 }),
-      );
-      over.add(arch);
+      const archWhite = new THREE.Mesh(new THREE.TorusGeometry(5.35, 0.16, 10, 32, Math.PI), whiteMat);
+      const archRose = new THREE.Mesh(new THREE.TorusGeometry(5.15, 0.1, 10, 32, Math.PI), roseChromeMat);
+      over.add(archWhite, archRose);
       this.centerOverhead[8] = new Instanced(over, SCENERY_POOL_LIMITS.overheadPerCenter, scene, { name: 'c8-over' });
     }
 
     // ========================================================================
-    // #9 SPACE INSTITUTE (ชั้น 10): Space Rocket + Launch Tower + Orbiting CubeSat
+    // #9 SPACE INSTITUTE (ชั้น 10): Multi-Stage Rocket w/ Strap-On SRBs + Umbilical Tower + Gridded CubeSat
     // ========================================================================
     {
+      const rocketSkin = new THREE.MeshPhongMaterial({
+        map: rocketHullSkinTexture('#f472b6'),
+        shininess: 75,
+      });
+      const goldFoilMat = new THREE.MeshPhongMaterial({
+        color: 0xfacc15,
+        emissive: 0x854d0e,
+        emissiveIntensity: 0.35,
+        shininess: 110,
+      });
+
       const stat = new THREE.Group();
-      const pad = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.6, 0.6, 12), slateMat);
-      pad.position.y = 0.3;
-      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.52, 0.65, 6.2, 14), whiteMat);
-      body.position.y = 3.6;
-      const nose = new THREE.Mesh(new THREE.ConeGeometry(0.52, 1.8, 14), new THREE.MeshBasicMaterial({ color: 0xf472b6 }));
-      nose.position.y = 7.6;
-      for (let i = 0; i < 4; i++) {
-        const fin = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.4, 0.7), new THREE.MeshBasicMaterial({ color: 0xf472b6 }));
-        const a = (i * Math.PI) / 2;
-        fin.position.set(Math.cos(a) * 0.7, 1.2, Math.sin(a) * 0.7);
-        fin.rotation.y = -a;
-        stat.add(fin);
+      // Launch Pad Flame Trench Pedestal
+      const pad = new THREE.Mesh(new THREE.CylinderGeometry(1.55, 1.85, 0.75, 16), slateMat);
+      pad.position.y = 0.38;
+      // Core Orbital Rocket Stage with roll-pattern skin
+      const coreStage = new THREE.Mesh(new THREE.CylinderGeometry(0.56, 0.64, 5.8, 20), rocketSkin);
+      coreStage.position.y = 3.85;
+      const interstage = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.58, 0.65, 20), darkMat);
+      interstage.position.y = 6.9;
+      // Payload Fairing + Escape Tower Nose Cone
+      const fairing = new THREE.Mesh(new THREE.CylinderGeometry(0.58, 0.62, 1.1, 20), whiteMat);
+      fairing.position.y = 7.7;
+      const nose = new THREE.Mesh(new THREE.ConeGeometry(0.58, 1.65, 20), new THREE.MeshPhongMaterial({ color: 0xf472b6, shininess: 85 }));
+      nose.position.y = 9.05;
+      const escapeRod = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.08, 0.9, 8), whiteMat);
+      escapeRod.position.y = 10.1;
+      // Main Engine Bell Cluster
+      const mainBell = new THREE.Mesh(new THREE.ConeGeometry(0.45, 0.7, 16), darkMat);
+      mainBell.position.y = 0.85;
+
+      // Two Strap-On Solid Rocket Boosters (SRBs) with Nose Cones & Exhaust Bells!
+      for (const zSide of [-0.82, 0.82]) {
+        const srbBody = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.26, 4.1, 14), rocketSkin);
+        srbBody.position.set(0, 2.95, zSide);
+        const srbNose = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.75, 14), new THREE.MeshPhongMaterial({ color: 0xf472b6, shininess: 80 }));
+        srbNose.position.set(0, 5.35, zSide);
+        const srbBell = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.45, 12), darkMat);
+        srbBell.position.set(0, 0.8, zSide);
+        const strut = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 0.45), slateMat);
+        strut.position.set(0, 4.2, zSide * 0.55);
+        stat.add(srbBody, srbNose, srbBell, strut);
       }
-      const launchGantry = new THREE.Mesh(new THREE.BoxGeometry(0.55, 7.8, 0.55), new THREE.MeshBasicMaterial({ color: 0x38bdf8, wireframe: true }));
-      launchGantry.position.set(1.65, 3.9, 0);
-      stat.add(pad, body, nose, launchGantry);
+
+      // Steel Launch Umbilical Tower with Crew Access Swing Arms
+      const gantryMast = new THREE.Mesh(new THREE.BoxGeometry(0.75, 8.6, 0.75), slateMat);
+      gantryMast.position.set(1.85, 4.4, 0);
+      const gantryCage = new THREE.Mesh(
+        new THREE.BoxGeometry(0.84, 8.6, 0.84),
+        new THREE.MeshBasicMaterial({ color: 0x38bdf8, wireframe: true }),
+      );
+      gantryCage.position.set(1.85, 4.4, 0);
+      for (const armY of [3.2, 5.6, 7.6]) {
+        const swingArm = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.24, 0.32), new THREE.MeshPhongMaterial({ color: 0x38bdf8 }));
+        swingArm.position.set(1.1, armY, 0);
+        stat.add(swingArm);
+      }
+
+      stat.add(pad, coreStage, interstage, fairing, nose, escapeRod, mainBell, gantryMast, gantryCage);
       this.centerStatic[9] = new Instanced(stat, SCENERY_POOL_LIMITS.staticPerCenter, scene, { name: 'c9-stat' });
 
+      // Orbiting Deep-Space CubeSat with Gold Mylar Foil, Comms Dish & Gridded Solar Wings
       const kin = new THREE.Group();
-      const orbitRing = new THREE.Mesh(new THREE.TorusGeometry(1.75, 0.06, 8, 28), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
-      orbitRing.rotation.x = Math.PI / 2.3;
-      const satBody = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.45, 0.45), new THREE.MeshBasicMaterial({ color: 0xfacc15 }));
-      satBody.position.set(1.75, 0, 0);
-      const satPanels = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.06, 0.38), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
-      satPanels.position.set(1.75, 0, 0);
-      kin.add(orbitRing, satBody, satPanels);
+      const orbitRing = new THREE.Mesh(new THREE.TorusGeometry(1.85, 0.045, 8, 32), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
+      orbitRing.rotation.x = Math.PI / 2.25;
+      const satBus = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.52, 0.52), goldFoilMat);
+      satBus.position.set(1.85, 0, 0);
+      const satDish = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.18, 12, 1, true), whiteMat);
+      satDish.rotation.x = Math.PI / 2;
+      satDish.position.set(1.85, 0.34, 0);
+      const satWings = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.06, 0.48), solarSkinMat);
+      satWings.position.set(1.85, 0, 0);
+      const satFrame = new THREE.Mesh(new THREE.BoxGeometry(2.16, 0.04, 0.52), silverMat);
+      satFrame.position.set(1.85, -0.02, 0);
+      kin.add(orbitRing, satBus, satDish, satWings, satFrame);
       this.centerKinetic[9] = new Instanced(kin, SCENERY_POOL_LIMITS.kineticPerCenter, scene, { name: 'c9-kin' });
 
+      // Rotating Toroidal Orbital Space Station with Radial Spokes
       const over = new THREE.Group();
-      const ringStation = new THREE.Mesh(new THREE.TorusGeometry(1.8, 0.14, 10, 24), new THREE.MeshBasicMaterial({ color: 0xf472b6 }));
-      ringStation.rotation.x = Math.PI / 3;
-      const coreHub = new THREE.Mesh(new THREE.SphereGeometry(0.5, 10, 10), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
-      over.add(ringStation, coreHub);
+      const habWheel = new THREE.Mesh(new THREE.TorusGeometry(1.9, 0.22, 12, 28), whiteMat);
+      habWheel.rotation.x = Math.PI / 2.8;
+      const neonTrim = new THREE.Mesh(new THREE.TorusGeometry(1.92, 0.06, 8, 28), new THREE.MeshBasicMaterial({ color: 0xf472b6 }));
+      neonTrim.rotation.x = Math.PI / 2.8;
+      const coreHub = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 1.3, 14), goldFoilMat);
+      coreHub.rotation.x = Math.PI / 2.8 - Math.PI / 2;
+      const spoke1 = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 3.6, 8), silverMat);
+      spoke1.rotation.z = Math.PI / 2;
+      over.add(habWheel, neonTrim, coreHub, spoke1);
       this.centerOverhead[9] = new Instanced(over, SCENERY_POOL_LIMITS.overheadPerCenter, scene, { name: 'c9-over' });
     }
   }
 
-  /** Large Holographic Billboards displaying each of the 9 TechnoPark Research Centers along the track! */
+  /**
+   * Large Holographic Billboards displaying each of the 9 TechnoPark Research Centers along the track!
+   * Wrapped in a `THREE.Group` with twin support pillars, base pads, and 3D backing frame so `Instanced`
+   * preserves the elevated screen height (`y = 3.8m`) and never sinks into the sidewalk.
+   */
   private buildCenterBillboards(scene: THREE.Scene) {
+    const pillarMat = new THREE.MeshPhongMaterial({ color: 0x334155, shininess: 60 });
+    const frameMat = new THREE.MeshPhongMaterial({ color: 0x0f172a, shininess: 80 });
+
     for (const meta of CENTER_LIST) {
-      const plane = new THREE.Mesh(
+      const grp = new THREE.Group();
+      grp.name = 'billboard-' + meta.id;
+      const neonMat = new THREE.MeshBasicMaterial({ color: meta.color });
+
+      // Twin support pillars + glowing ground base pads
+      for (const sx of [-2.1, 2.1]) {
+        const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.46, 0.24, 12), neonMat);
+        pad.position.set(sx, 0.12, -0.14);
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.18, 3.6, 12), pillarMat);
+        leg.position.set(sx, 1.8, -0.14);
+        grp.add(pad, leg);
+      }
+
+      // 3D dark steel backing cabinet + top/bottom neon light bars
+      const cabinet = new THREE.Mesh(new THREE.BoxGeometry(5.85, 3.0, 0.18), frameMat);
+      cabinet.position.set(0, 3.6, -0.11);
+      const topBar = new THREE.Mesh(new THREE.BoxGeometry(5.95, 0.14, 0.26), neonMat);
+      topBar.position.set(0, 5.12, -0.08);
+      const botBar = new THREE.Mesh(new THREE.BoxGeometry(5.95, 0.12, 0.26), neonMat);
+      botBar.position.set(0, 2.08, -0.08);
+
+      // High-contrast double-sided holographic display screen
+      const screen = new THREE.Mesh(
         new THREE.PlaneGeometry(5.6, 2.8),
         new THREE.MeshBasicMaterial({ map: centerBillboardTexture(meta.id), side: THREE.DoubleSide }),
       );
-      plane.position.y = 3.6;
-      plane.name = 'billboard-' + meta.id;
-      this.centerBillboards[meta.id] = new Instanced(plane, SCENERY_POOL_LIMITS.billboardsPerCenter, scene, { name: 'bb-' + meta.id });
+      screen.position.set(0, 3.6, 0.01);
+
+      grp.add(cabinet, topBar, botBar, screen);
+      this.centerBillboards[meta.id] = new Instanced(grp, SCENERY_POOL_LIMITS.billboardsPerCenter, scene, { name: 'bb-' + meta.id });
     }
   }
 
@@ -938,71 +1415,75 @@ export class World {
       const cId = centerAtDist(d);
       const z = zOf(d);
       const phase = d * 0.13;
+      const slotNum = Math.abs(Math.floor(d / 18));
 
       for (const side of [-1, 1]) {
-        const baseX = side * (SIDEWALK_IN + 2.3);
+        const scaleVar = 0.94 + ((slotNum * 5 + (side > 0 ? 2 : 0)) % 4) * 0.045;
+        const baseX = side * (SIDEWALK_IN + 2.35);
         const yaw = side > 0 ? -Math.PI / 2 : Math.PI / 2;
         q.setFromEuler(e.set(0, yaw, 0));
-        m4.compose(v.set(baseX, 0.25, z), q, one);
+        m4.compose(v.set(baseX, 0.25, z), q, sc.set(scaleVar, scaleVar, scaleVar));
         this.centerStatic[cId].add(m4);
 
-        // Animated Kinetic attachment per Center!
+        // Animated Kinetic attachment per Center (scaled proportionally so it locks to the static structure)!
         switch (cId) {
-          case 1: // Rotating ATC radar beacon at y = 9.45
+          case 1: // Rotating Dual-Band Airport Surveillance Radar at tower roof
             q.setFromEuler(e.set(0, this.time * 3.8 + phase, 0));
-            m4.compose(v.set(baseX, 9.45, z), q, one);
+            m4.compose(v.set(baseX, 0.25 + 9.48 * scaleVar, z), q, sc.set(scaleVar, scaleVar, scaleVar));
             break;
-          case 4: // Spinning 3-blade Wind Turbine rotor at y = 7.6
+          case 4: // Spinning 3-blade Wind Turbine rotor at nacelle front
             q.setFromEuler(e.set(0, yaw, this.time * 2.6 * side + phase));
-            m4.compose(v.set(baseX, 7.6, z), q, one);
+            m4.compose(v.set(baseX, 0.25 + 7.6 * scaleVar, z), q, sc.set(scaleVar, scaleVar, scaleVar));
             break;
-          case 5: { // Pulsing 5G signal rings at y = 7.9
-            const pulse = 0.85 + 0.3 * Math.sin(this.time * 4.0 + phase);
+          case 5: { // Pulsing 5G mmWave transceiver array
+            const pulse = (0.85 + 0.28 * Math.sin(this.time * 4.0 + phase)) * scaleVar;
             q.setFromEuler(e.set(0, this.time * 2.2 + phase, 0));
-            m4.compose(v.set(baseX, 7.9, z), q, sc.set(pulse, pulse, pulse));
+            m4.compose(v.set(baseX, 0.25 + 8.1 * scaleVar, z), q, sc.set(pulse, pulse, pulse));
             break;
           }
-          case 3: // Spinning Maglev gyro-rings at y = 6.4
+          case 3: // Spinning Maglev flux stator rings
             q.setFromEuler(e.set(this.time * 2.0, this.time * 3.0 + phase, 0));
-            m4.compose(v.set(baseX, 6.4, z), q, one);
+            m4.compose(v.set(baseX, 0.25 + 6.45 * scaleVar, z), q, sc.set(scaleVar, scaleVar, scaleVar));
             break;
-          case 2: // Pivoting articulated robot forearm at y = 5.1
-            q.setFromEuler(e.set(0, yaw, Math.sin(this.time * 2.8 + phase) * 0.55));
-            m4.compose(v.set(baseX, 5.1, z), q, one);
+          case 2: // Pivoting articulated robot forearm & laser claw
+            q.setFromEuler(e.set(0, yaw, Math.sin(this.time * 2.8 + phase) * 0.52));
+            m4.compose(v.set(baseX, 0.25 + 5.05 * scaleVar, z), q, sc.set(scaleVar, scaleVar, scaleVar));
             break;
-          case 6: // Rotating Doppler radar dish at y = 5.1
+          case 6: // Rotating Parabolic Doppler radar dish
             q.setFromEuler(e.set(0, this.time * 2.4 * side + phase, 0));
-            m4.compose(v.set(baseX, 5.1, z), q, one);
+            m4.compose(v.set(baseX, 0.25 + 5.15 * scaleVar, z), q, sc.set(scaleVar, scaleVar, scaleVar));
             break;
-          case 7: // Spinning Double-Helix DNA strand at y = 3.85
+          case 7: // Spinning Double-Helix DNA strand
             q.setFromEuler(e.set(0, this.time * 2.2 * side + phase, 0));
-            m4.compose(v.set(baseX, 3.85, z), q, one);
+            m4.compose(v.set(baseX, 0.25 + 3.85 * scaleVar, z), q, sc.set(scaleVar, scaleVar, scaleVar));
             break;
-          case 8: // Rotating 3D Medical Cross & Holo-Ring at y = 5.4
+          case 8: // Rotating Beveled 3D Medical Cross & Gyro-Rings
             q.setFromEuler(e.set(0, this.time * 2.0 + phase, Math.sin(this.time * 2 + phase) * 0.15));
-            m4.compose(v.set(baseX, 5.4, z), q, one);
+            m4.compose(v.set(baseX, 0.25 + 5.55 * scaleVar, z), q, sc.set(scaleVar, scaleVar, scaleVar));
             break;
-          case 9: // Orbiting CubeSat revolving around Space Rocket at y = 4.6
+          case 9: // Orbiting Gold-Foil CubeSat revolving around Space Rocket
             q.setFromEuler(e.set(0, this.time * 2.8 * side + phase, 0));
-            m4.compose(v.set(baseX, 4.6, z), q, one);
+            m4.compose(v.set(baseX, 0.25 + 4.8 * scaleVar, z), q, sc.set(scaleVar, scaleVar, scaleVar));
             break;
         }
         this.centerKinetic[cId].add(m4);
 
-        // Outer open-horizon vista row at x = ±14.5 every 36m for deep panoramic depth!
-        if (Math.abs(Math.floor(d / 18)) % 2 === 0) {
-          q.setFromEuler(e.set(0, yaw, 0));
-          m4.compose(v.set(side * 14.5, 0, z - 6), q, sc.set(1.25, 1.25, 1.25));
+        // Outer open-horizon vista row at x = ±(14.5..16.5) every 36m for deep panoramic depth!
+        if (slotNum % 2 === 0) {
+          const vistaScale = 1.18 + (slotNum % 3) * 0.12;
+          const vistaX = side * (14.6 + (slotNum % 3) * 1.1);
+          q.setFromEuler(e.set(0, yaw + side * 0.18, 0));
+          m4.compose(v.set(vistaX, 0, z - 6), q, sc.set(vistaScale, vistaScale, vistaScale));
           this.centerStatic[cId].add(m4);
         }
       }
 
       // 3. Overhead Sky Elements every 36m (flying jets, clouds, hyperloop arches, laser gantries, space rings)
-      if (Math.abs(Math.floor(d / 18)) % 2 === 0) {
+      if (slotNum % 2 === 0) {
         if (cId === 1) {
-          // Jet Fighter squadron banking overhead!
+          // Supersonic Jet Fighter squadron banking overhead!
           const flyX = Math.sin(this.time * 1.8 + phase) * 3.8;
-          const flyY = 9.5 + Math.cos(this.time * 2.2 + phase) * 0.8;
+          const flyY = 9.6 + Math.cos(this.time * 2.2 + phase) * 0.8;
           q.setFromEuler(e.set(0, 0, -Math.cos(this.time * 1.8 + phase) * 0.35));
           m4.compose(v.set(flyX, flyY, z), q, one);
           this.centerOverhead[1].add(m4);
@@ -1029,7 +1510,7 @@ export class World {
       this.centerOverhead[meta.id].end();
     }
 
-    // 4. Holographic 9-Center Billboards angled toward the runner every 36m (matching the stage Center at `d`!)
+    // 4. Holographic 9-Center Billboards with 3D support legs angled toward the runner every 36m
     for (const meta of CENTER_LIST) this.centerBillboards[meta.id].begin();
     const firstBB = Math.floor((pd - 18) / 36) * 36;
     let slotIdx = Math.max(0, Math.floor(firstBB / 36));
@@ -1037,7 +1518,7 @@ export class World {
       const side = slotIdx % 2 === 0 ? -1 : 1;
       const centerId: CenterId = sim.activeCenter || centerAtDist(d) || stageCenter;
       q.setFromEuler(e.set(0, side * -0.36, 0));
-      m4.compose(v.set(side * (SIDEWALK_OUT + 0.6), 0.6, zOf(d) - 9), q, one);
+      m4.compose(v.set(side * (SIDEWALK_OUT + 0.5), 0.0, zOf(d) - 9), q, one);
       this.centerBillboards[centerId].add(m4);
       slotIdx++;
     }
