@@ -545,12 +545,28 @@ export class NetClient {
     }
   }
 
+  private useDirectPortFallback = false;
+
+  private resolveWsUrl(): string {
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const hostname = window.location.hostname || 'localhost';
+    const port = window.location.port;
+    // In Vite dev/preview (ports 5173 / 4173), connect directly to port 8787.
+    // In production (Nginx port 80/443 or unified server on 8787), connect to same-origin `/ws` first,
+    // and fall back to `:8787/ws` if same-origin isn't proxying WebSockets.
+    const isViteDev = port === '5173' || port === '4173';
+    if (isViteDev || (this.useDirectPortFallback && window.location.protocol !== 'https:')) {
+      return `${proto}//${hostname}:8787/ws`;
+    }
+    return `${proto}//${window.location.host}/ws`;
+  }
+
   private connectWebSocket() {
     try {
-      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const host = window.location.hostname || 'localhost';
-      const ws = new WebSocket(`${proto}//${host}:8787`);
+      const ws = new WebSocket(this.resolveWsUrl());
+      let opened = false;
       ws.onopen = () => {
+        opened = true;
         this.wsConnected = true;
         if (this.lastJoinedProfile) {
           ws.send(JSON.stringify({ type: 'join', profile: this.lastJoinedProfile } satisfies NetMessage));
@@ -569,9 +585,12 @@ export class NetClient {
       };
       ws.onclose = () => {
         this.wsConnected = false;
+        if (!opened) {
+          this.useDirectPortFallback = !this.useDirectPortFallback;
+        }
         setTimeout(() => {
           if (!this.wsConnected) this.connectWebSocket();
-        }, 2500);
+        }, 1800);
       };
       ws.onerror = () => {
         this.wsConnected = false;

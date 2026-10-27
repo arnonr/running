@@ -1,18 +1,60 @@
 import { createServer } from 'http';
+import { readFile, stat } from 'fs/promises';
+import { extname, join, resolve } from 'path';
 import { WebSocketServer, WebSocket } from 'ws';
 import { MatchRoomCore, type NetMessage } from '../src/net';
 
 const PORT = Number(process.env.PORT || 8787);
+const DIST_DIR = resolve(process.cwd(), 'dist');
 const room = new MatchRoomCore();
 room.addDemoBots(4);
 
-const httpServer = createServer((req, res) => {
+const MIME_TYPES: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.mjs': 'application/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.glb': 'model/gltf-binary',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
+};
+
+const httpServer = createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  if (req.url === '/health' || req.url === '/status') {
+  const rawUrl = (req.url || '/').split('?')[0];
+
+  if (rawUrl === '/health' || rawUrl === '/status') {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(room.getSnapshot()));
     return;
   }
+
+  // Serve built production frontend from ./dist if present
+  try {
+    const safePath = rawUrl === '/' ? '/index.html' : rawUrl;
+    const candidate = resolve(DIST_DIR, '.' + safePath);
+    if (candidate.startsWith(DIST_DIR)) {
+      const info = await stat(candidate);
+      if (info.isFile()) {
+        const buf = await readFile(candidate);
+        const ext = extname(candidate).toLowerCase();
+        res.writeHead(200, {
+          'Content-Type': MIME_TYPES[ext] || 'application/octet-stream',
+          'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=31536000, immutable',
+        });
+        res.end(buf);
+        return;
+      }
+    }
+  } catch {
+    // Fallback if dist/ is not built or file not found
+  }
+
   res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
   res.end('TECHNO SURFERS 3D Synchronized Booth Server Ready');
 });
