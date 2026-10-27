@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { Instanced } from './pools';
 import { Fx } from './fx';
 import { PlayerView } from './player';
@@ -44,8 +45,7 @@ interface House { type: number; side: number; d: number; len: number; depth: num
 
 interface GhostSlot {
   group: THREE.Group;
-  body: THREE.Mesh;
-  head: THREE.Mesh;
+  mixer: THREE.AnimationMixer;
   ring: THREE.Mesh;
   badge: THREE.Sprite;
   badgeKey: string;
@@ -142,39 +142,43 @@ export class World {
       this.centerCards[meta.id] = new Instanced(m, 4, s);
     }
 
-    this.buildGhostPackPool(s);
     this.player = new PlayerView(core, s);
+    this.buildGhostPackPool(core, s);
     this.fx = new Fx(s);
   }
 
-  private buildGhostPackPool(scene: THREE.Scene) {
-    const bodyGeo = new THREE.CapsuleGeometry(0.28, 0.72, 6, 12);
-    const headGeo = new THREE.SphereGeometry(0.24, 12, 10);
-    const ringGeo = new THREE.RingGeometry(0.36, 0.54, 20);
+  private buildGhostPackPool(core: GLTF, scene: THREE.Scene) {
+    const ringGeo = new THREE.RingGeometry(0.38, 0.56, 24);
     ringGeo.rotateX(-Math.PI / 2);
+    const runClip = core.animations.find((c) => c.name === 'run') || core.animations[0];
 
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 6; i++) {
       const group = new THREE.Group();
       group.visible = false;
-      const bodyMat = new THREE.MeshLambertMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.82 });
-      const headMat = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 });
-      const ringMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, side: THREE.DoubleSide, transparent: true, opacity: 0.75 });
 
-      const body = new THREE.Mesh(bodyGeo, bodyMat);
-      body.position.y = 0.75;
-      const head = new THREE.Mesh(headGeo, headMat);
-      head.position.y = 1.48;
+      // Clone the real 3D character from PlayerView so bots/ghosts look like real runners!
+      const charClone = cloneSkinned(this.player.model);
+      charClone.scale.set(0.92, 0.92, 0.92);
+      const mixer = new THREE.AnimationMixer(charClone);
+      if (runClip) {
+        const act = mixer.clipAction(runClip);
+        act.timeScale = 1.15;
+        act.play();
+        mixer.update(i * 0.23); // desync footsteps between bots
+      }
+
+      const ringMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, side: THREE.DoubleSide, transparent: true, opacity: 0.8 });
       const ring = new THREE.Mesh(ringGeo, ringMat);
       ring.position.y = 0.04;
 
       const spriteMat = new THREE.SpriteMaterial({ transparent: true, depthWrite: false });
       const badge = new THREE.Sprite(spriteMat);
-      badge.scale.set(2.2, 0.55, 1);
-      badge.position.set(0, 2.15, 0);
+      badge.scale.set(1.45, 0.36, 1);
+      badge.position.set(0, 2.05, 0);
 
-      group.add(body, head, ring, badge);
+      group.add(charClone, ring, badge);
       scene.add(group);
-      this.ghostSlots.push({ group, body, head, ring, badge, badgeKey: '', x: 0, y: 0, z: 0 });
+      this.ghostSlots.push({ group, mixer, ring, badge, badgeKey: '', x: laneX(i % 3), y: 0, z: -4 - i * 3 });
     }
   }
 
@@ -423,17 +427,21 @@ export class World {
         continue;
       }
       slot.group.visible = true;
-      const targetX = g.x ?? laneX(g.lane);
+      slot.mixer.update(dt);
+
+      // Spread runners slightly in X and Z so two runners never overlap at the exact same coordinate
+      const spreadX = ((i % 3) - 1) * 0.28;
+      const spreadZ = -i * 1.35;
+      const targetX = (g.x ?? laneX(g.lane)) + spreadX;
       const targetY = g.y ?? 0;
-      const targetZ = -g.packOffsetZ; // negative Z is ahead on the track!
-      const k = Math.min(1, dt * 8);
+      const targetZ = -g.packOffsetZ + spreadZ;
+      const k = Math.min(1, dt * 7);
       slot.x += (targetX - slot.x) * k;
       slot.y += (targetY - slot.y) * k;
       slot.z += (targetZ - slot.z) * k;
-      slot.group.position.set(slot.x, slot.y + Math.abs(Math.sin(this.time * 9 + i)) * 0.12, slot.z);
+      slot.group.position.set(slot.x, slot.y, slot.z);
 
       const col = g.activeCenter ? CENTERS[g.activeCenter].color : g.color;
-      (slot.body.material as THREE.MeshLambertMaterial).color.set(col);
       (slot.ring.material as THREE.MeshBasicMaterial).color.set(col);
 
       const badgeKey = `${g.rank}:${g.name}:${col}`;

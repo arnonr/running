@@ -214,44 +214,78 @@ function round(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: 
   g.closePath();
 }
 
-/** Holographic 9-Center Capsule Card with icon, center number, and glowing rim. */
+/** Holographic 9-Center Capsule Card with crisp vector emblem, center number, and power label. */
 export function centerCapsuleTexture(centerId: CenterId) {
-  const S = 160;
+  const S = 192;
   const { c, g } = canvas(S, S);
   const meta = CENTERS[centerId];
 
   // Outer glowing frame
   g.fillStyle = 'rgba(255,255,255,0.96)';
-  round(g, 6, 6, S - 12, S - 12, 32);
+  round(g, 6, 6, S - 12, S - 12, 34);
   g.fill();
 
-  // Inner colored core
+  // Inner dark core
   g.fillStyle = '#0f172a';
-  round(g, 14, 14, S - 28, S - 28, 26);
+  round(g, 14, 14, S - 28, S - 28, 28);
   g.fill();
 
   const gr = g.createLinearGradient(0, 14, 0, S - 14);
   gr.addColorStop(0, meta.color);
-  gr.addColorStop(1, '#0f172a');
+  gr.addColorStop(1, '#090d16');
   g.fillStyle = gr;
-  g.globalAlpha = 0.85;
-  round(g, 18, 18, S - 36, S - 36, 22);
+  g.globalAlpha = 0.9;
+  round(g, 18, 18, S - 36, S - 36, 24);
   g.fill();
   g.globalAlpha = 1;
 
   // Center badge number (#1..#9)
-  g.fillStyle = 'rgba(15,23,42,0.85)';
-  round(g, 24, 22, 48, 28, 10);
+  g.fillStyle = 'rgba(15,23,42,0.9)';
+  round(g, 24, 22, 54, 30, 10);
   g.fill();
   g.fillStyle = '#ffffff';
-  g.font = 'bold 20px system-ui, sans-serif';
+  g.font = 'bold 21px system-ui, sans-serif';
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  g.fillText(`#${centerId}`, 48, 37);
+  g.fillText(`#${centerId}`, 51, 38);
 
-  // Emoji / Icon
-  g.font = '62px system-ui, sans-serif';
-  g.fillText(meta.icon, S / 2, S / 2 + 16);
+  // Crisp vector emblem in center + Emoji
+  g.save();
+  g.translate(S / 2, S / 2 - 4);
+  g.strokeStyle = '#ffffff';
+  g.fillStyle = '#ffffff';
+  g.lineWidth = 6;
+  g.beginPath();
+  g.arc(0, 0, 34, 0, Math.PI * 2);
+  g.fillStyle = 'rgba(15, 23, 42, 0.55)';
+  g.fill();
+  g.stroke();
+
+  const shortTag: Record<CenterId, string> = {
+    1: 'JET',
+    2: 'ROBO',
+    3: 'TRAIN',
+    4: 'SHIELD',
+    5: '5G',
+    6: 'RADAR',
+    7: 'BIO×2',
+    8: '+500',
+    9: 'SPACE',
+  };
+  g.fillStyle = '#ffffff';
+  g.font = '900 20px system-ui, sans-serif';
+  g.fillText(shortTag[centerId], 0, 2);
+  g.restore();
+
+  // Bottom Thai short label bar
+  g.fillStyle = 'rgba(15,23,42,0.88)';
+  round(g, 24, S - 52, S - 48, 28, 9);
+  g.fill();
+  g.fillStyle = '#f8fafc';
+  g.font = 'bold 14px system-ui, sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(meta.shortTh.slice(0, 14), S / 2, S - 38);
 
   return tex(c, false);
 }

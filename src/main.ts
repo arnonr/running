@@ -361,7 +361,10 @@ async function main() {
     if (!inMenu && !isTvMode) {
       world.player.update(sim, state === 'pause' ? 0 : dt, events);
     }
-    world.sync(sim, state === 'pause' ? 0 : dt, inMenu, latestRoom.activeRunners, savedProfile.id, isTvMode);
+    // Only show other Ghost runners when in a synchronized RUNNING match (not during Solo Play or when room is still in LOBBY)
+    const visibleGhosts =
+      !soloRun && latestRoom.phase === 'RUNNING' ? latestRoom.activeRunners : [];
+    world.sync(sim, state === 'pause' ? 0 : dt, inMenu, visibleGhosts, savedProfile.id, isTvMode);
 
     audio.tempo = 112 + (sim.speed - SPEED.start) * 1.5;
 
