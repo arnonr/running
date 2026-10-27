@@ -173,7 +173,6 @@ export class UI {
 
         <!-- On-Screen Mobile Touch Controller Pad -->
         <div class="mobile-pad" id="mobile-pad">
-          <div class="mp-hint" id="mp-hint">🎮 กดปุ่มด้านล่าง หรือ ปัดหน้าจอ เพื่อบังคับตัวละครบนจอทีวี</div>
           <div class="mp-grid">
             <button type="button" class="mp-btn" data-act="left" aria-label="เลี้ยวซ้าย">
               <span class="mp-ico">◀</span>
@@ -431,6 +430,7 @@ export class UI {
     this.el['tv-layer']?.classList.toggle('on', tv);
     if (this.el['btn-mode-switch']) {
       this.el['btn-mode-switch'].textContent = tv ? '📱 สลับโหมดมือถือ (Mobile)' : '📺 สลับโหมดจอทีวี (TV Arena)';
+      if (tv) this.el['btn-mode-switch'].style.display = '';
     }
     if (tv) {
       this.el['s-start']?.classList.remove('on');
@@ -467,11 +467,8 @@ export class UI {
     }
     const showHud = s === 'play' || s === 'pause' || (s === 'start' && this.lobbyReady);
     this.el.hud?.classList.toggle('on', showHud);
-    if (this.el['mp-hint']) {
-      this.el['mp-hint'].textContent =
-        s === 'start' && this.lobbyReady
-          ? '🟢 ประจำจุดปล่อยตัวแล้ว! ลองกดปุ่มซ้อมมือได้เลย — รอ Admin กดปล่อยตัวบนจอทีวี'
-          : '🎮 กดปุ่มด้านล่าง หรือ ปัดหน้าจอ เพื่อบังคับตัวละครบนจอทีวี';
+    if (this.el['btn-mode-switch']) {
+      this.el['btn-mode-switch'].style.display = this.touch || showHud ? 'none' : '';
     }
     if (s !== 'play') this.hint('');
   }
