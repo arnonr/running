@@ -79,6 +79,7 @@ export class UI {
   private holoTimer = 0;
   private profile: PlayerProfile;
   private tvMode = false;
+  private lobbyReady = false;
 
   constructor(
     root: HTMLElement,
@@ -172,7 +173,7 @@ export class UI {
 
         <!-- On-Screen Mobile Touch Controller Pad -->
         <div class="mobile-pad" id="mobile-pad">
-          <div class="mp-hint">🎮 กดปุ่มด้านล่าง หรือ ปัดหน้าจอ เพื่อบังคับตัวละครบนจอทีวี</div>
+          <div class="mp-hint" id="mp-hint">🎮 กดปุ่มด้านล่าง หรือ ปัดหน้าจอ เพื่อบังคับตัวละครบนจอทีวี</div>
           <div class="mp-grid">
             <button type="button" class="mp-btn" data-act="left" aria-label="เลี้ยวซ้าย">
               <span class="mp-ico">◀</span>
@@ -235,7 +236,7 @@ export class UI {
             </div>
           </div>
 
-          <button class="big gold-btn" id="btn-join-sync">🏁 ลงสนามวิ่งพร้อมจอทีวีทันที!</button>
+          <button class="big gold-btn" id="btn-join-sync">✅ ยืนยันตัวละคร · เข้าจุดปล่อยตัว</button>
           <button class="big" id="btn-play-solo">⚡ วิ่งฝึกซ้อมเดี่ยว (ไม่ซิงค์ทีวี)</button>
         </div>
       </section>
@@ -305,14 +306,14 @@ export class UI {
             </div>
 
             <div class="tv-host-card">
-              <h4>🎛️ แผงควบคุมพิธีกรประจำบูธ (Host Controls)</h4>
+              <h4>🎛️ แผงควบคุมพิธีกรประจำบูธ (Admin Controls)</h4>
               <div class="tv-host-btns">
-                <button class="tv-btn primary" id="tv-btn-start">🚀 เริ่มรอบใหม่ทันที (Start Now)</button>
-                <button class="tv-btn" id="tv-btn-hold">⏸️ ชะลอเวลา (Hold)</button>
+                <button class="tv-btn primary" id="tv-btn-start">🚀 เริ่มปล่อยตัวรอบนี้ / เริ่มใหม่ (Admin Start)</button>
+                <button class="tv-btn danger" id="tv-btn-stop" style="grid-column:span 2;background:rgba(225,29,72,.28);border-color:#fb7185;color:#fecdd3">🛑 หยุดรอบกลางคัน / รีเซ็ตกลับล็อบบี้ (Stop & Reset)</button>
                 <button class="tv-btn" id="tv-btn-bots">🤖 เพิ่มบอทร่วมวิ่ง</button>
                 <button class="tv-btn" id="tv-btn-dur180">⏱️ 3 นาที (180s)</button>
                 <button class="tv-btn" id="tv-btn-dur120">⏱️ 2 นาที (120s)</button>
-                <button class="tv-btn" id="tv-btn-dur90" style="grid-column:span 2">⏱️ โหมดเร่งด่วน 1.5 นาที (90s)</button>
+                <button class="tv-btn" id="tv-btn-dur90">⏱️ 1.5 นาที (90s)</button>
               </div>
             </div>
           </div>
@@ -410,7 +411,7 @@ export class UI {
 
     // TV Host Controls
     tap('tv-btn-start', () => this.handlers.hostCommand({ action: 'start_now' }));
-    tap('tv-btn-hold', () => this.handlers.hostCommand({ action: 'toggle_hold' }));
+    tap('tv-btn-stop', () => this.handlers.hostCommand({ action: 'force_lobby' }));
     tap('tv-btn-bots', () => this.handlers.hostCommand({ action: 'add_bots', count: 4 }));
     tap('tv-btn-dur180', () => this.handlers.hostCommand({ action: 'set_duration', duration: 180 }));
     tap('tv-btn-dur120', () => this.handlers.hostCommand({ action: 'set_duration', duration: 120 }));
@@ -445,6 +446,11 @@ export class UI {
     }
   }
 
+  setLobbyReady(ready: boolean) {
+    this.lobbyReady = ready;
+    this.show(this.screen);
+  }
+
   show(s: Screen) {
     this.screen = s;
     this.root.dataset.screen = s;
@@ -456,9 +462,17 @@ export class UI {
       return;
     }
     for (const k of ['start', 'countdown', 'pause', 'over'] as const) {
-      this.el['s-' + k]?.classList.toggle('on', s === k);
+      const showStart = k === 'start' ? s === 'start' && !this.lobbyReady : s === k;
+      this.el['s-' + k]?.classList.toggle('on', showStart);
     }
-    this.el.hud?.classList.toggle('on', s === 'play' || s === 'pause');
+    const showHud = s === 'play' || s === 'pause' || (s === 'start' && this.lobbyReady);
+    this.el.hud?.classList.toggle('on', showHud);
+    if (this.el['mp-hint']) {
+      this.el['mp-hint'].textContent =
+        s === 'start' && this.lobbyReady
+          ? '🟢 ประจำจุดปล่อยตัวแล้ว! ลองกดปุ่มซ้อมมือได้เลย — รอ Admin กดปล่อยตัวบนจอทีวี'
+          : '🎮 กดปุ่มด้านล่าง หรือ ปัดหน้าจอ เพื่อบังคับตัวละครบนจอทีวี';
+    }
     if (s !== 'play') this.hint('');
   }
 
@@ -479,33 +493,33 @@ export class UI {
   updateRoomSnapshot(snap: RoomSnapshot, localPlayerId: string) {
     const isQueued = snap.waitingQueue.some((p) => p.id === localPlayerId);
     const phaseLabel: Record<RoomSnapshot['phase'], string> = {
-      LOBBY: '🟢 ห้องรอเริ่มรอบถัดไป (LOBBY)',
+      LOBBY: '🟢 ห้องรอปล่อยตัว (รอ Admin กดเริ่มบนทีวี)',
       COUNTDOWN: '🟡 กำลังนับถอยหลังปล่อยตัว!',
       RUNNING: '🔴 รอบปัจจุบันกำลังวิ่งแข่งขันอยู่!',
       PODIUM: '🏆 สรุปผลผู้ชนะประจำรอบ (PODIUM)',
     };
     if (this.el['ls-phase']) this.el['ls-phase'].textContent = phaseLabel[snap.phase];
-    if (this.el['ls-timer']) this.el['ls-timer'].textContent = this.formatMMSS(snap.phaseTimeLeft);
+    if (this.el['ls-timer']) {
+      this.el['ls-timer'].textContent = snap.phase === 'LOBBY' ? 'READY' : this.formatMMSS(snap.phaseTimeLeft);
+    }
 
     if (this.el['ls-desc']) {
       if (snap.phase === 'RUNNING') {
         this.el['ls-desc'].textContent = isQueued
-          ? `คุณอยู่ในคิวรอบถัดไป (#${snap.matchId + 1}) · รอบปัจจุบันอยู่ชั้น ${snap.currentFloor}/10 เหลือเวลา ${this.formatMMSS(snap.phaseTimeLeft)} (ปัดซ้าย/ขวาเพื่อวอร์มอัพรอได้เลย!)`
-          : `รอบปัจจุบันกำลังวิ่งอยู่ที่ชั้น ${snap.currentFloor}/10 · กดปุ่มสีทองเพื่อเข้าคิวรอเริ่มรอบถัดไปพร้อมกัน หรือกดเริ่มวิ่งทดสอบเดี่ยวได้ทันที`;
+          ? `คุณอยู่ในคิวรอบถัดไป (#${snap.matchId + 1}) · รอบปัจจุบันอยู่ชั้น ${snap.currentFloor}/10 เหลือเวลา ${this.formatMMSS(snap.phaseTimeLeft)}`
+          : `รอบปัจจุบันกำลังวิ่งอยู่ที่ชั้น ${snap.currentFloor}/10 · กดปุ่มสีทองเพื่อลงสนามร่วมวิ่งทันที!`;
       } else {
-        this.el['ls-desc'].textContent = `มีผู้เล่นพร้อมในห้อง ${snap.activeRunners.length} คน · จะออกตัวพร้อมกันในอีก ${Math.ceil(snap.phaseTimeLeft)} วินาที!`;
+        this.el['ls-desc'].textContent = `มีผู้เล่นพร้อมในห้อง ${snap.activeRunners.length} คน · กดปุ่มสีทองเพื่อเข้าจุดปล่อยตัว แล้วรอ Admin กดเริ่มรอบบนจอทีวี!`;
       }
     }
 
     // Update TV Live Arena
     if (this.el['tv-phase']) {
-      this.el['tv-phase'].textContent = `รอบที่ #${snap.matchId} · ${snap.phase} · ชั้น ${snap.currentFloor}/10`;
+      const phaseTh = snap.phase === 'LOBBY' ? 'LOBBY (รอ Admin กดเริ่ม)' : snap.phase;
+      this.el['tv-phase'].textContent = `รอบที่ #${snap.matchId} · ${phaseTh} · ชั้น ${snap.currentFloor}/10`;
     }
     if (this.el['tv-timer']) {
-      this.el['tv-timer'].textContent = this.formatMMSS(snap.phaseTimeLeft);
-    }
-    if (this.el['tv-btn-hold']) {
-      this.el['tv-btn-hold'].textContent = snap.lobbyHold ? '▶️ ปล่อยเวลาเดินต่อ (Resume)' : '⏸️ ชะลอเวลารอคน (Hold)';
+      this.el['tv-timer'].textContent = snap.phase === 'LOBBY' ? 'READY' : this.formatMMSS(snap.phaseTimeLeft);
     }
     if (this.el['tv-active-count']) {
       this.el['tv-active-count'].textContent = `${snap.activeRunners.length} คน`;

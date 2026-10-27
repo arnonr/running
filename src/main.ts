@@ -118,11 +118,14 @@ async function main() {
           const elapsed = Math.max(0, snap.matchDuration - snap.phaseTimeLeft);
           startMatchRun(snap.matchSeed, snap.matchDuration, elapsed);
           ui.toast('🏁 ลงสนามร่วมวิ่งกับจอทีวีแล้ว! กดปุ่ม ซ้าย/กระโดด/กลิ้ง/ขวา ด้านล่างได้เลย!');
-        } else {
+        } else if (snap.phase === 'COUNTDOWN') {
           state = 'countdown';
           ui.show('countdown');
-          ui.setCountdown(3);
+          ui.setCountdown(snap.phaseTimeLeft);
           audio.countdownBeep(false);
+        } else {
+          ui.setLobbyReady(true);
+          ui.toast('✅ ประจำจุดปล่อยตัวแล้ว! ลองกดปุ่มซ้อมมือรอก่อนได้ — รอ Admin กดปล่อยตัวบนจอทีวี', 2600);
         }
       },
       controlAction: (act) => {
@@ -162,6 +165,10 @@ async function main() {
         ui.show('play');
       },
       pause: () => {
+        if (state === 'start') {
+          ui.setLobbyReady(false);
+          return;
+        }
         if (state !== 'play') return;
         state = 'pause';
         audio.stopMusic();
@@ -171,10 +178,10 @@ async function main() {
         if (soloRun) {
           startMatchRun((Date.now() % 100000) + 1, DEFAULT_MATCH_DURATION);
         } else {
-          toLobby();
+          toLobby(true);
         }
       },
-      home: () => toLobby(),
+      home: () => toLobby(false),
       toggleMute,
       hostCommand: (cmd) => {
         audio.unlock();
@@ -200,14 +207,15 @@ async function main() {
     net.join(savedProfile);
   }
 
-  function toLobby() {
+  function toLobby(keepReady = false) {
     soloRun = false;
-    joinedMatchId = latestRoom.matchId;
+    joinedMatchId = -1;
     sim.reset(latestRoom.matchSeed, false, latestRoom.matchDuration);
     world.resetScenery();
     world.fx.clear();
     audio.stopMusic();
     state = 'start';
+    ui.setLobbyReady(keepReady);
     ui.show('start');
   }
 
@@ -242,8 +250,11 @@ async function main() {
       joinedMatchId = snap.matchId;
       audio.countdownBeep(true);
       startMatchRun(snap.matchSeed, snap.matchDuration);
-    } else if (snap.phase === 'LOBBY' && prevPhase === 'PODIUM' && isTvMode) {
-      toLobby();
+    } else if (snap.phase === 'LOBBY' && prevPhase !== 'LOBBY') {
+      toLobby(!isTvMode);
+      if (!isTvMode && (prevPhase === 'RUNNING' || prevPhase === 'COUNTDOWN')) {
+        ui.toast('🛑 Admin รีเซ็ตรอบแล้ว — เตรียมพร้อมที่จุดปล่อยตัว!', 2200);
+      }
     }
 
     if (state === 'countdown') {
@@ -260,6 +271,9 @@ async function main() {
       // Interactive Warm-Up in the Waiting Lobby!
       if (a === 'left' || a === 'right' || a === 'up' || a === 'down') {
         audio.unlock();
+        if (a === 'up') audio.jump(false);
+        else if (a === 'down') audio.slide();
+        else audio.lane();
         world.player.warmUpAction(a);
       }
       return;

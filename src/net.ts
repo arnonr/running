@@ -95,7 +95,7 @@ export class MatchRoomCore {
   phase: RoomPhase = 'LOBBY';
   phaseTimeLeft = 45;
   matchDuration = DEFAULT_MATCH_DURATION;
-  lobbyHold = false;
+  lobbyHold = true;
   matchSeed = 202610;
   referenceDistance = 0;
   currentFloor = 1;
@@ -144,9 +144,6 @@ export class MatchRoomCore {
         packOffsetZ: existing ? existing.packOffsetZ : 0,
         isBot: cleanProfile.isBot,
       });
-      if (forceImmediate && (this.phase === 'LOBBY' || this.phase === 'PODIUM')) {
-        this.hostCommand({ action: 'start_now' });
-      }
       return { queuedForNextRound: false };
     }
 
@@ -207,19 +204,17 @@ export class MatchRoomCore {
   hostCommand(cmd: HostCommand) {
     switch (cmd.action) {
       case 'start_now': {
-        if (this.phase === 'LOBBY' || this.phase === 'PODIUM') {
-          if (this.phase === 'PODIUM') {
-            this.enterLobby();
-          }
-          if (this.activeMap.size === 0 && this.waitingMap.size > 0) {
-            this.promoteWaitingQueue();
-          }
-          if (this.activeMap.size === 0) {
-            this.addDemoBots(4);
-          }
-          this.phase = 'COUNTDOWN';
-          this.phaseTimeLeft = 3.5;
+        if (this.phase !== 'LOBBY') {
+          this.enterLobby();
         }
+        if (this.activeMap.size === 0 && this.waitingMap.size > 0) {
+          this.promoteWaitingQueue();
+        }
+        if (this.activeMap.size === 0) {
+          this.addDemoBots(4);
+        }
+        this.phase = 'COUNTDOWN';
+        this.phaseTimeLeft = 3.5;
         break;
       }
       case 'toggle_hold': {
