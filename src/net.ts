@@ -280,22 +280,23 @@ export class MatchRoomCore {
         if (!r.isBot) continue;
         const idx = this.botSeeds.get(id) ?? 1;
         const wave = Math.sin(elapsed * 0.45 + idx * 1.7);
-        const botFactor = 0.92 + (idx % 3) * 0.045 + wave * 0.03;
+        const botFactor = 0.96 + (idx % 3) * 0.035 + wave * 0.03;
         r.d = +(this.referenceDistance * botFactor).toFixed(1);
-        r.lane = ((Math.floor(elapsed / (2.4 + idx * 0.5)) + idx) % 3 + 3) % 3;
+        r.lane = ((Math.floor(elapsed / 3.2) + idx) % 3 + 3) % 3;
         r.x = laneX(r.lane);
         r.floor = this.currentFloor;
         r.coins = Math.floor(elapsed * (1.8 + idx * 0.25));
         r.score = Math.floor(r.d * 2.2 + r.coins * 15);
         r.collectedCount = Math.min(9, Math.floor(p01 * 9));
-        const centerCycle = (Math.floor(elapsed / 14) + idx) % 9 + 1;
-        r.activeCenter = (elapsed % 14 < 5.5) ? (centerCycle as CenterId) : null;
+        const botPhaseTime = elapsed + idx * 3.2;
+        const centerCycle = (Math.floor(botPhaseTime / 11) + idx) % 9 + 1;
+        r.activeCenter = (botPhaseTime % 11 < 6.5) ? (centerCycle as CenterId) : null;
         if (r.activeCenter === 1) {
-          r.y = 4.2 + Math.sin(elapsed * 5 + idx) * 0.22;
+          r.y = 3.6 + Math.sin(elapsed * 5 + idx) * 0.22;
           r.sliding = false;
           r.stumbling = false;
         } else if (r.activeCenter === 7 || r.activeCenter === 9) {
-          r.y = Math.max(0, Math.sin(elapsed * 2.8 + idx) * 2.6);
+          r.y = Math.max(0, Math.sin(elapsed * 2.8 + idx) * 2.2);
           r.sliding = false;
           r.stumbling = false;
         } else {
@@ -414,12 +415,12 @@ export class MatchRoomCore {
       runners.length > 0
         ? runners.reduce((acc, r) => acc + r.d, 0) / runners.length
         : this.referenceDistance;
-    const anchorD = this.referenceDistance > 0 ? this.referenceDistance : meanD;
+    const anchorD = meanD > 0 ? meanD : this.referenceDistance;
 
     runners.forEach((r, idx) => {
       r.rank = idx + 1;
       const rawOffset = (r.d - anchorD) * 0.22;
-      r.packOffsetZ = +Math.max(-14, Math.min(10, rawOffset)).toFixed(2);
+      r.packOffsetZ = +Math.max(-6, Math.min(6, rawOffset)).toFixed(2);
     });
 
     return {

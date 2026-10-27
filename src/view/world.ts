@@ -61,12 +61,6 @@ interface GhostSlot {
   charClone: THREE.Object3D;
   avatar: AvatarId;
   mixer: THREE.AnimationMixer;
-  actions: {
-    run?: THREE.AnimationAction;
-    jump?: THREE.AnimationAction;
-    roll?: THREE.AnimationAction;
-  };
-  currentClip: 'run' | 'jump' | 'roll';
   attachments: Record<CenterId, THREE.Group>;
   activeCenter: CenterId | null;
   wasStumbling: boolean;
@@ -1122,29 +1116,20 @@ export class World {
     const ringGeo = new THREE.RingGeometry(0.38, 0.56, 24);
     ringGeo.rotateX(-Math.PI / 2);
     const runClip = core.animations.find((c) => c.name === 'run') || core.animations[0];
-    const jumpClip = core.animations.find((c) => c.name === 'jump' || c.name === 'jumpup');
-    const rollClip = core.animations.find((c) => c.name === 'roll');
 
     for (let i = 0; i < 10; i++) {
       const group = new THREE.Group();
       group.visible = false;
 
       const charClone = cloneSkinned(this.player.model);
+      charClone.rotation.set(0, Math.PI, 0);
       charClone.scale.set(0.92, 0.92, 0.92);
       const mixer = new THREE.AnimationMixer(charClone);
-      const actions: GhostSlot['actions'] = {};
       if (runClip) {
         const act = mixer.clipAction(runClip);
         act.timeScale = 1.15;
         act.play();
         mixer.update(i * 0.23);
-        actions.run = act;
-      }
-      if (jumpClip) {
-        actions.jump = mixer.clipAction(jumpClip);
-      }
-      if (rollClip) {
-        actions.roll = mixer.clipAction(rollClip);
       }
 
       const attachments = createCenterAttachments();
@@ -1169,8 +1154,6 @@ export class World {
         charClone,
         avatar: 'non',
         mixer,
-        actions,
-        currentClip: 'run',
         attachments,
         activeCenter: null,
         wasStumbling: false,
@@ -1632,17 +1615,11 @@ export class World {
       slot.mixer.update(dt * (isRunning ? 1.0 : 0.65));
       updateAvatarMotion(slot.charClone, this.time + i * 0.37, true);
 
-      // Switch animation clip between run / jump / roll for TV ghost runners
-      const desiredClip: 'run' | 'jump' | 'roll' =
-        g.sliding ? 'roll' : g.y > 0.35 && g.activeCenter !== 1 ? 'jump' : 'run';
-      if (slot.currentClip !== desiredClip) {
-        const prevAct = slot.actions[slot.currentClip];
-        const nextAct = slot.actions[desiredClip] || slot.actions.run;
-        if (nextAct) {
-          nextAct.reset().fadeIn(0.1).play();
-          if (prevAct && prevAct !== nextAct) prevAct.fadeOut(0.1);
-          slot.currentClip = desiredClip;
-        }
+      // Crouch/tuck cleanly during slide without breaking root bone orientation
+      if (isRunning && g.sliding) {
+        slot.charClone.scale.set(0.96, 0.56, 0.96);
+      } else {
+        slot.charClone.scale.set(0.92, 0.92, 0.92);
       }
 
       let targetX: number;
@@ -1655,12 +1632,12 @@ export class World {
         targetX = hasCustomLane ? (g.x || laneX(g.lane)) + gridCol * 0.25 : gridCol * 2.15;
         targetZ = -1.2 - gridRow * 2.4;
       } else {
-        const spreadX = ((i % 3) - 1) * 0.28;
-        const spreadZ = -i * 1.15;
+        const spreadX = ((i % 3) - 1) * 0.32;
+        const rankZ = -7.8 + (g.rank - 1) * 1.65;
         targetX = (g.x ?? laneX(g.lane)) + spreadX;
-        targetZ = -g.packOffsetZ + spreadZ;
+        targetZ = Math.max(-11.0, Math.min(-1.0, rankZ - g.packOffsetZ * 0.35));
       }
-      const targetY = g.activeCenter === 1 ? Math.max(g.y ?? 0, 3.8 + Math.sin(this.time * 4 + i) * 0.2) : (g.y ?? 0);
+      const targetY = g.activeCenter === 1 ? Math.max(g.y ?? 0, 3.2 + Math.sin(this.time * 4 + i) * 0.2) : (g.y ?? 0);
       const k = Math.min(1, dt * 9);
       slot.x += (targetX - slot.x) * k;
       slot.y += (targetY - slot.y) * k;
@@ -1698,7 +1675,7 @@ export class World {
         });
       }
       slot.wasStumbling = isStumbling;
-      slot.charClone.rotation.z = isStumbling ? Math.sin(this.time * 30 + i) * 0.34 : 0;
+      slot.charClone.rotation.set(0, Math.PI, isStumbling ? Math.sin(this.time * 30 + i) * 0.34 : 0);
 
       const col = g.activeCenter ? CENTERS[g.activeCenter].color : g.color;
       (slot.ring.material as THREE.MeshBasicMaterial).color.set(col);
