@@ -1,6 +1,6 @@
-// Procedural canvas textures + 10-Floor Zone Atmosphere Palettes + 9-Center capsule & billboard textures.
+// Procedural canvas textures + 9-Center Open-Horizon Biome Palettes + Portal Gate & Capsule textures.
 import * as THREE from 'three';
-import { CENTERS } from '../config';
+import { CENTERS, STAGE_CENTER_ORDER } from '../config';
 import type { CenterId, ZoneId } from '../sim/types';
 
 export interface ZonePalette {
@@ -13,6 +13,169 @@ export interface ZonePalette {
   neonHex: string;
   starIntensity: number;
 }
+
+export interface CenterBiomePalette {
+  centerId: CenterId;
+  stageTitleTh: string;
+  skyTopHex: string;
+  skyMidHex: string;
+  skyHorizonHex: string;
+  fogHex: string;
+  sunHex: string;
+  groundTintHex: string;
+  trackTintHex: string;
+  neonHex: string;
+  starIntensity: number;
+  sunScale: number;
+  hasPlanetRings: boolean;
+}
+
+export const CENTER_BIOMES: Record<CenterId, CenterBiomePalette> = {
+  // Stage 1 (0-20s, Floor 1): Aviation & Defense — Bright Azure Sky, Golden Sun, Airfield Runway
+  1: {
+    centerId: 1,
+    stageTitleTh: 'ด่าน 1/9 · ✈️ ศูนย์อากาศยาน (ชั้น 1)',
+    skyTopHex: '#0369a1',
+    skyMidHex: '#0ea5e9',
+    skyHorizonHex: '#bae6fd',
+    fogHex: '#7dd3fc',
+    sunHex: '#fef08a',
+    groundTintHex: '#1e3a5f',
+    trackTintHex: '#bae6fd',
+    neonHex: '#38bdf8',
+    starIntensity: 0.0,
+    sunScale: 1.15,
+    hasPlanetRings: false,
+  },
+  // Stage 2 (20-40s, Floor 1): Clean Energy & Environment — Fresh Emerald-Mint Sunrise, Solar Valley
+  4: {
+    centerId: 4,
+    stageTitleTh: 'ด่าน 2/9 · 🌿 ศูนย์พลังงานสะอาด (ชั้น 1)',
+    skyTopHex: '#065f46',
+    skyMidHex: '#10b981',
+    skyHorizonHex: '#a7f3d0',
+    fogHex: '#6ee7b7',
+    sunHex: '#fde047',
+    groundTintHex: '#065f46',
+    trackTintHex: '#bbf7d0',
+    neonHex: '#4ade80',
+    starIntensity: 0.05,
+    sunScale: 1.25,
+    hasPlanetRings: false,
+  },
+  // Stage 3 (40-60s, Floor 1): 5G Wireless Innovation — Electric Cyber Violet-Magenta Matrix
+  5: {
+    centerId: 5,
+    stageTitleTh: 'ด่าน 3/9 · 📡 ศูนย์นวัตกรรมไร้สาย 5G (ชั้น 1)',
+    skyTopHex: '#1e1b4b',
+    skyMidHex: '#6d28d9',
+    skyHorizonHex: '#d8b4fe',
+    fogHex: '#9333ea',
+    sunHex: '#f0abfc',
+    groundTintHex: '#3b0764',
+    trackTintHex: '#e9d5ff',
+    neonHex: '#c084fc',
+    starIntensity: 0.35,
+    sunScale: 1.2,
+    hasPlanetRings: false,
+  },
+  // Stage 4 (60-80s, Floor 1): Modern Automotive & Rail — Golden Hour Sunset Hyperloop Station
+  3: {
+    centerId: 3,
+    stageTitleTh: 'ด่าน 4/9 · 🚄 ศูนย์ยานยนต์และระบบราง (ชั้น 1)',
+    skyTopHex: '#1e293b',
+    skyMidHex: '#d97706',
+    skyHorizonHex: '#fde68a',
+    fogHex: '#f59e0b',
+    sunHex: '#fef08a',
+    groundTintHex: '#451a03',
+    trackTintHex: '#fef08a',
+    neonHex: '#facc15',
+    starIntensity: 0.15,
+    sunScale: 1.4,
+    hasPlanetRings: false,
+  },
+  // Stage 5 (80-100s, Floors 2-6): Automation & Robotics — Warm Industrial Amber-Copper Smart Factory
+  2: {
+    centerId: 2,
+    stageTitleTh: 'ด่าน 5/9 · 🤖 ศูนย์หุ่นยนต์อัตโนมัติ (ชั้น 2)',
+    skyTopHex: '#31102f',
+    skyMidHex: '#c2410c',
+    skyHorizonHex: '#fdba74',
+    fogHex: '#ea580c',
+    sunHex: '#ffedd5',
+    groundTintHex: '#431407',
+    trackTintHex: '#fed7aa',
+    neonHex: '#fb923c',
+    starIntensity: 0.25,
+    sunScale: 1.3,
+    hasPlanetRings: false,
+  },
+  // Stage 6 (100-120s, Floor 8): Radar Technology — Atmospheric Teal-Aqua Cloudscape
+  6: {
+    centerId: 6,
+    stageTitleTh: 'ด่าน 6/9 · 🛰️ ศูนย์เทคโนโลยีเรดาร์ (ชั้น 8)',
+    skyTopHex: '#042f2e',
+    skyMidHex: '#0d9488',
+    skyHorizonHex: '#99f6e4',
+    fogHex: '#2dd4bf',
+    sunHex: '#ccfbf1',
+    groundTintHex: '#115e59',
+    trackTintHex: '#99f6e4',
+    neonHex: '#2dd4bf',
+    starIntensity: 0.4,
+    sunScale: 1.35,
+    hasPlanetRings: true,
+  },
+  // Stage 7 (120-140s, Floor 8): Bio-Chem & Bio-Materials — Bioluminescent Lime-Emerald Helix Lab
+  7: {
+    centerId: 7,
+    stageTitleTh: 'ด่าน 7/9 · 🧬 ศูนย์เทคโนโลยีชีวภาพ (ชั้น 8)',
+    skyTopHex: '#052e16',
+    skyMidHex: '#15803d',
+    skyHorizonHex: '#bef264',
+    fogHex: '#4ade80',
+    sunHex: '#ecfccb',
+    groundTintHex: '#14532d',
+    trackTintHex: '#d9f99d',
+    neonHex: '#a3e635',
+    starIntensity: 0.45,
+    sunScale: 1.25,
+    hasPlanetRings: false,
+  },
+  // Stage 8 (140-160s, Floor 9): Medical Device Innovation — Clean Rose-Coral & Alabaster Sanctuary
+  8: {
+    centerId: 8,
+    stageTitleTh: 'ด่าน 8/9 · ➕ ศูนย์นวัตกรรมเครื่องมือแพทย์ (ชั้น 9)',
+    skyTopHex: '#4c0519',
+    skyMidHex: '#e11d48',
+    skyHorizonHex: '#fecdd3',
+    fogHex: '#fb7185',
+    sunHex: '#ffe4e6',
+    groundTintHex: '#4c0519',
+    trackTintHex: '#fecdd3',
+    neonHex: '#fb7185',
+    starIntensity: 0.6,
+    sunScale: 1.45,
+    hasPlanetRings: false,
+  },
+  // Stage 9 (160-180s, Floor 10): International Space Institute — Deep Cosmic Nebula & Ringed Planet
+  9: {
+    centerId: 9,
+    stageTitleTh: 'ด่าน 9/9 · 🚀 สถาบันเทคโนโลยีอวกาศฯ (ชั้น 10)',
+    skyTopHex: '#020617',
+    skyMidHex: '#4c1d95',
+    skyHorizonHex: '#f472b6',
+    fogHex: '#3b0764',
+    sunHex: '#f9a8d4',
+    groundTintHex: '#1e1b4b',
+    trackTintHex: '#fbcfe8',
+    neonHex: '#f472b6',
+    starIntensity: 1.0,
+    sunScale: 1.85,
+    hasPlanetRings: true,
+  },
+};
 
 export const ZONE_PALETTES: Record<ZoneId, ZonePalette> = {
   1: {
@@ -96,6 +259,36 @@ export function lerpZonePalette(progress01: number): ZonePalette {
   };
 }
 
+/** Smoothly interpolates across all 9 sequential Center Biomes (`STAGE_CENTER_ORDER`) over `progress01` (`0..1`). */
+export function lerpCenterBiome(progress01: number): CenterBiomePalette {
+  const safe = Number.isFinite(progress01) ? progress01 : 0;
+  const p = Math.max(0, Math.min(0.999999, safe));
+  const scaled = p * 9;
+  const idx0 = Math.min(8, Math.floor(scaled));
+  const idx1 = Math.min(8, idx0 + 1);
+  const localT = scaled - idx0;
+  // Blend smoothly during the final 22% of each 20s stage
+  const blend = idx0 === idx1 ? 0 : Math.max(0, (localT - 0.78) / 0.22);
+
+  const a = CENTER_BIOMES[STAGE_CENTER_ORDER[idx0]];
+  const b = CENTER_BIOMES[STAGE_CENTER_ORDER[idx1]];
+  return {
+    centerId: a.centerId,
+    stageTitleTh: a.stageTitleTh,
+    skyTopHex: lerpHex(a.skyTopHex, b.skyTopHex, blend),
+    skyMidHex: lerpHex(a.skyMidHex, b.skyMidHex, blend),
+    skyHorizonHex: lerpHex(a.skyHorizonHex, b.skyHorizonHex, blend),
+    fogHex: lerpHex(a.fogHex, b.fogHex, blend),
+    sunHex: lerpHex(a.sunHex, b.sunHex, blend),
+    groundTintHex: lerpHex(a.groundTintHex, b.groundTintHex, blend),
+    trackTintHex: lerpHex(a.trackTintHex, b.trackTintHex, blend),
+    neonHex: lerpHex(a.neonHex, b.neonHex, blend),
+    starIntensity: a.starIntensity + (b.starIntensity - a.starIntensity) * blend,
+    sunScale: a.sunScale + (b.sunScale - a.sunScale) * blend,
+    hasPlanetRings: blend > 0.5 ? b.hasPlanetRings : a.hasPlanetRings,
+  };
+}
+
 function canvas(w: number, h: number) {
   const c = document.createElement('canvas');
   c.width = w;
@@ -113,14 +306,14 @@ function tex(c: HTMLCanvasElement, repeat = true) {
 let seed = 7;
 const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 
-/** Futuristic TechnoPark Maglev/Express Track: carbon-fiber base, glowing energy conduits, and metallic rails. */
+/** Futuristic TechnoPark Maglev/Express Track: bright tintable surface so each Center biome transforms the track! */
 export function trackTexture() {
   const S = 256;
   const { c, g } = canvas(S, S);
-  g.fillStyle = '#0f172a';
+  g.fillStyle = '#334155';
   g.fillRect(0, 0, S, S);
   // Tech grid lines
-  g.strokeStyle = 'rgba(56, 189, 248, 0.14)';
+  g.strokeStyle = 'rgba(255, 255, 255, 0.22)';
   g.lineWidth = 2;
   for (let i = 0; i <= 8; i++) {
     const pos = i * (S / 8);
@@ -130,34 +323,32 @@ export function trackTexture() {
   // Maglev sleepers
   for (let k = 0; k < 4; k++) {
     const y = k * (S / 4) + 10;
-    g.fillStyle = '#1e293b';
+    g.fillStyle = '#475569';
     g.fillRect(16, y, S - 32, 24);
-    g.fillStyle = '#334155';
+    g.fillStyle = '#94a3b8';
     g.fillRect(16, y, S - 32, 6);
-    // Glowing cyan energy core in center of sleeper
-    g.fillStyle = '#38bdf8';
-    g.fillRect(S / 2 - 26, y + 9, 52, 6);
+    // Glowing center energy core in sleeper
+    g.fillStyle = '#ffffff';
+    g.fillRect(S / 2 - 30, y + 9, 60, 6);
   }
   // Maglev guide rails
   for (const x of [0.24, 0.76]) {
-    g.fillStyle = '#090d16';
+    g.fillStyle = '#1e293b';
     g.fillRect(x * S - 8, 0, 16, S);
-    g.fillStyle = '#cbd5e1';
+    g.fillStyle = '#f8fafc';
     g.fillRect(x * S - 4, 0, 8, S);
-    g.fillStyle = '#38bdf8';
-    g.fillRect(x * S - 1.5, 0, 3, S);
   }
   return tex(c);
 }
 
-/** High-tech laboratory walkway slabs with glowing circuit seams. */
+/** High-tech laboratory walkway slabs with glowing circuit seams (tintable per Center biome). */
 export function pavingTexture() {
   const S = 256;
   const { c, g } = canvas(S, S);
-  g.fillStyle = '#1e293b';
+  g.fillStyle = '#64748b';
   g.fillRect(0, 0, S, S);
-  g.strokeStyle = '#38bdf8';
-  g.globalAlpha = 0.35;
+  g.strokeStyle = '#ffffff';
+  g.globalAlpha = 0.45;
   g.lineWidth = 3;
   for (let k = 0; k <= 4; k++) {
     g.beginPath(); g.moveTo(0, k * 64); g.lineTo(S, k * 64); g.stroke();
@@ -167,20 +358,59 @@ export function pavingTexture() {
   return tex(c);
 }
 
-/** Cyber circuit floor outside the track. */
+/** Open-horizon terrain grid outside the track (bright neutral base so `groundMat.color` tints it vividly per Center!). */
 export function groundTexture() {
   const S = 128;
   const { c, g } = canvas(S, S);
-  g.fillStyle = '#090d16';
+  g.fillStyle = '#94a3b8';
   g.fillRect(0, 0, S, S);
-  g.strokeStyle = 'rgba(56, 189, 248, 0.16)';
+  g.strokeStyle = 'rgba(255, 255, 255, 0.38)';
   g.lineWidth = 2;
   g.strokeRect(4, 4, S - 8, S - 8);
-  for (let i = 0; i < 60; i++) {
-    g.fillStyle = rnd() > 0.5 ? 'rgba(56,189,248,0.22)' : 'rgba(168,85,247,0.18)';
-    g.fillRect(rnd() * S, rnd() * S, 4, 4);
+  g.beginPath();
+  g.moveTo(0, S / 2); g.lineTo(S, S / 2);
+  g.moveTo(S / 2, 0); g.lineTo(S / 2, S);
+  g.stroke();
+  for (let i = 0; i < 36; i++) {
+    g.fillStyle = rnd() > 0.5 ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.22)';
+    g.fillRect(rnd() * S, rnd() * S, 5, 5);
   }
   return tex(c);
+}
+
+/** Overhead Portal Gate Banner announcing entry into each of the 9 TechnoPark Research Centers! */
+export function centerGateBannerTexture(centerId: CenterId, stageNumber: number) {
+  const W = 768, H = 192;
+  const { c, g } = canvas(W, H);
+  const meta = CENTERS[centerId];
+
+  g.fillStyle = 'rgba(9, 13, 22, 0.94)';
+  round(g, 6, 6, W - 12, H - 12, 28);
+  g.fill();
+
+  g.lineWidth = 8;
+  g.strokeStyle = meta.color;
+  round(g, 10, 10, W - 20, H - 20, 24);
+  g.stroke();
+
+  g.fillStyle = meta.color;
+  round(g, 26, 22, W - 52, 46, 14);
+  g.fill();
+  g.fillStyle = '#090d16';
+  g.font = '900 24px system-ui, sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(`STAGE ${stageNumber} / 9 · ศูนย์วิจัยที่ #${meta.id} · ${meta.exhibitionFloorTh}`, W / 2, 46);
+
+  g.fillStyle = '#ffffff';
+  g.font = '900 42px system-ui, sans-serif';
+  g.fillText(`${meta.icon} ${meta.shortTh}`, W / 2, 106);
+
+  g.fillStyle = meta.color;
+  g.font = 'bold 24px system-ui, sans-serif';
+  g.fillText(`⚡ พลังประจำศูนย์: ${meta.powerName}`, W / 2, 154);
+
+  return tex(c, false);
 }
 
 /** Glass Curtain-Wall & Neon Lab Tower Facade Texture for TechnoPark side buildings. */

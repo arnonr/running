@@ -1,12 +1,43 @@
 import { describe, it, expect } from 'vitest';
-import { ZONE_PALETTES, lerpZonePalette } from '../src/view/textures';
+import { ZONE_PALETTES, lerpZonePalette, CENTER_BIOMES, lerpCenterBiome } from '../src/view/textures';
+import { STAGE_CENTER_ORDER } from '../src/config';
 
-describe('10-Floor Zone Atmosphere Palettes', () => {
+describe('10-Floor Zone & 9-Center Open-Horizon Biome Palettes', () => {
   it('defines distinct sky, fog, and neon accent colors for all 4 floor zones and interpolates smoothly', () => {
     expect(Object.keys(ZONE_PALETTES)).toHaveLength(4);
     const p1 = lerpZonePalette(0.1);
     const p4 = lerpZonePalette(0.95);
     expect(p1.fogHex).not.toBe(p4.fogHex);
     expect(p4.starIntensity).toBeGreaterThan(0.7);
+  });
+
+  it('defines 9 distinct CenterBiomePalettes and interpolates across STAGE_CENTER_ORDER safely', () => {
+    expect(Object.keys(CENTER_BIOMES)).toHaveLength(9);
+    const horizonSet = new Set<string>();
+    for (const id of STAGE_CENTER_ORDER) {
+      const b = CENTER_BIOMES[id];
+      expect(b).toBeDefined();
+      expect(b.skyTopHex).toMatch(/^#[0-9a-fA-F]{6}$/);
+      expect(b.skyMidHex).toMatch(/^#[0-9a-fA-F]{6}$/);
+      expect(b.skyHorizonHex).toMatch(/^#[0-9a-fA-F]{6}$/);
+      expect(b.groundTintHex).toMatch(/^#[0-9a-fA-F]{6}$/);
+      expect(b.trackTintHex).toMatch(/^#[0-9a-fA-F]{6}$/);
+      horizonSet.add(b.skyHorizonHex);
+    }
+    expect(horizonSet.size).toBe(9);
+
+    // Check safe clamping for negative, >1, and NaN progress values
+    for (const p of [-1, 0, 0.25, 0.5, 0.75, 1, 2, NaN]) {
+      const pal = lerpCenterBiome(p);
+      expect(pal.skyTopHex).toMatch(/^#[0-9a-fA-F]{6}$/);
+      expect(pal.skyHorizonHex).toMatch(/^#[0-9a-fA-F]{6}$/);
+      expect(pal.groundTintHex).toMatch(/^#[0-9a-fA-F]{6}$/);
+    }
+
+    // Check stage progression matches STAGE_CENTER_ORDER
+    for (let i = 0; i < 9; i++) {
+      const pal = lerpCenterBiome((i + 0.3) / 9);
+      expect(pal.centerId).toBe(STAGE_CENTER_ORDER[i]);
+    }
   });
 });

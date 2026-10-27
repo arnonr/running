@@ -3,12 +3,14 @@ import * as THREE from 'three';
 import { Sim } from './sim/sim';
 import { World } from './view/world';
 import { parseGLB, fetchBuffer } from './view/assets';
-import { ZONE_PALETTES } from './view/textures';
 import { Audio } from './audio';
 import { bindInput, type Action } from './input';
 import { UI, type Screen } from './ui';
 import { load, save } from './storage';
-import { SPEED, DEFAULT_MATCH_DURATION, VIEW_AHEAD, speedAtProgress } from './config';
+import {
+  SPEED, DEFAULT_MATCH_DURATION, VIEW_AHEAD, CENTERS,
+  speedAtProgress, stageIndexAtProgress, stageCenterAtProgress,
+} from './config';
 import { NetClient, AVATAR_COLORS, type PlayerProfile, type RoomSnapshot } from './net';
 import type { SimEvent, CenterId } from './sim/types';
 
@@ -271,7 +273,12 @@ async function main() {
       }
       case 'floorChange': {
         audio.level();
-        ui.toast(`🚀 ทะยานขึ้นสู่ ชั้น ${ev.floor} / 10!`);
+        break;
+      }
+      case 'centerStageChange': {
+        audio.level();
+        const meta = CENTERS[ev.centerId];
+        ui.toast(`🌟 ด่าน ${ev.stageIndex + 1}/9: เข้าสู่ ${meta.icon} ศูนย์ที่ #${meta.id} ${meta.shortTh}!`, 2400);
         break;
       }
       case 'stumble':
@@ -327,6 +334,8 @@ async function main() {
         sim.matchDuration = latestRoom.matchDuration;
         sim.time = elapsed;
         sim.floor = latestRoom.currentFloor;
+        sim.stageIndex = stageIndexAtProgress(sim.progress01);
+        sim.stageCenter = stageCenterAtProgress(sim.progress01);
         sim.d = latestRoom.referenceDistance;
         sim.speed = speedAtProgress(sim.progress01);
         sim.track.ensure(sim.d + VIEW_AHEAD);
@@ -385,12 +394,13 @@ async function main() {
     audio.rumble(rumble);
 
     const myRunner = latestRoom.activeRunners.find((r) => r.id === savedProfile.id);
+    const stageMeta = CENTERS[sim.stageCenter];
     ui.hud({
       score: Math.floor(sim.score),
       coins: sim.coins,
       mult: sim.mult,
       floor: sim.floor,
-      zoneNameTh: ZONE_PALETTES[sim.zoneId].nameTh,
+      zoneNameTh: `${stageMeta.icon} ด่าน ${sim.stageIndex + 1}/9 · ${stageMeta.shortTh}`,
       timeLeft: sim.timeLeft,
       progress01: sim.progress01,
       activeCenter: sim.activeCenter,
