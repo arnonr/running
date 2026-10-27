@@ -4,7 +4,7 @@ import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { Instanced } from './pools';
 import { Fx } from './fx';
-import { PlayerView } from './player';
+import { PlayerView, createCenterAttachments, updateCenterAttachments } from './player';
 import {
   trackTexture, pavingTexture, groundTexture, glowTexture,
   centerCapsuleTexture, centerBillboardTexture, centerGateBannerTexture,
@@ -61,6 +61,15 @@ interface GhostSlot {
   charClone: THREE.Object3D;
   avatar: AvatarId;
   mixer: THREE.AnimationMixer;
+  actions: {
+    run?: THREE.AnimationAction;
+    jump?: THREE.AnimationAction;
+    roll?: THREE.AnimationAction;
+  };
+  currentClip: 'run' | 'jump' | 'roll';
+  attachments: Record<CenterId, THREE.Group>;
+  activeCenter: CenterId | null;
+  wasStumbling: boolean;
   ring: THREE.Mesh;
   badge: THREE.Sprite;
   badgeKey: string;
@@ -1113,6 +1122,8 @@ export class World {
     const ringGeo = new THREE.RingGeometry(0.38, 0.56, 24);
     ringGeo.rotateX(-Math.PI / 2);
     const runClip = core.animations.find((c) => c.name === 'run') || core.animations[0];
+    const jumpClip = core.animations.find((c) => c.name === 'jump' || c.name === 'jumpup');
+    const rollClip = core.animations.find((c) => c.name === 'roll');
 
     for (let i = 0; i < 10; i++) {
       const group = new THREE.Group();
@@ -1121,11 +1132,24 @@ export class World {
       const charClone = cloneSkinned(this.player.model);
       charClone.scale.set(0.92, 0.92, 0.92);
       const mixer = new THREE.AnimationMixer(charClone);
+      const actions: GhostSlot['actions'] = {};
       if (runClip) {
         const act = mixer.clipAction(runClip);
         act.timeScale = 1.15;
         act.play();
         mixer.update(i * 0.23);
+        actions.run = act;
+      }
+      if (jumpClip) {
+        actions.jump = mixer.clipAction(jumpClip);
+      }
+      if (rollClip) {
+        actions.roll = mixer.clipAction(rollClip);
+      }
+
+      const attachments = createCenterAttachments();
+      for (const grp of Object.values(attachments)) {
+        group.add(grp);
       }
 
       const ringMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, side: THREE.DoubleSide, transparent: true, opacity: 0.8 });
@@ -1145,6 +1169,11 @@ export class World {
         charClone,
         avatar: 'non',
         mixer,
+        actions,
+        currentClip: 'run',
+        attachments,
+        activeCenter: null,
+        wasStumbling: false,
         ring,
         badge,
         badgeKey: '',
@@ -1603,6 +1632,19 @@ export class World {
       slot.mixer.update(dt * (isRunning ? 1.0 : 0.65));
       updateAvatarMotion(slot.charClone, this.time + i * 0.37, true);
 
+      // Switch animation clip between run / jump / roll for TV ghost runners
+      const desiredClip: 'run' | 'jump' | 'roll' =
+        g.sliding ? 'roll' : g.y > 0.35 && g.activeCenter !== 1 ? 'jump' : 'run';
+      if (slot.currentClip !== desiredClip) {
+        const prevAct = slot.actions[slot.currentClip];
+        const nextAct = slot.actions[desiredClip] || slot.actions.run;
+        if (nextAct) {
+          nextAct.reset().fadeIn(0.1).play();
+          if (prevAct && prevAct !== nextAct) prevAct.fadeOut(0.1);
+          slot.currentClip = desiredClip;
+        }
+      }
+
       let targetX: number;
       let targetZ: number;
       if (!isRunning) {
@@ -1618,12 +1660,45 @@ export class World {
         targetX = (g.x ?? laneX(g.lane)) + spreadX;
         targetZ = -g.packOffsetZ + spreadZ;
       }
-      const targetY = g.y ?? 0;
+      const targetY = g.activeCenter === 1 ? Math.max(g.y ?? 0, 3.8 + Math.sin(this.time * 4 + i) * 0.2) : (g.y ?? 0);
       const k = Math.min(1, dt * 9);
       slot.x += (targetX - slot.x) * k;
       slot.y += (targetY - slot.y) * k;
       slot.z += (targetZ - slot.z) * k;
       slot.group.position.set(slot.x, slot.y, slot.z);
+
+      // Update 3D 9-Center power-up attachments & particle bursts on TV
+      updateCenterAttachments(slot.attachments, g.activeCenter, this.time + i * 0.4);
+      if (slot.activeCenter !== g.activeCenter) {
+        if (g.activeCenter !== null) {
+          const pCol = CENTERS[g.activeCenter].color;
+          this.fx.burst(slot.x, slot.y + 1.0, slot.z, 22, pCol, {
+            speed: 4.6, up: 3.6, size: 0.55, life: 0.55,
+          });
+        }
+        slot.activeCenter = g.activeCenter;
+      }
+      if (isRunning && g.activeCenter !== null && Math.random() < dt * 26) {
+        const pCol = CENTERS[g.activeCenter].color;
+        this.fx.burst(
+          slot.x + (Math.random() - 0.5) * 0.45,
+          slot.y + 0.45,
+          slot.z + 0.4,
+          1,
+          pCol,
+          { speed: 1.0, up: 0.5, size: 0.36, life: 0.4, grav: 0 },
+        );
+      }
+
+      // Stumble / obstacle hit spark burst & shake on TV
+      const isStumbling = !!g.stumbling;
+      if (isStumbling && !slot.wasStumbling) {
+        this.fx.burst(slot.x, slot.y + 0.9, slot.z, 20, 0xff4422, {
+          speed: 5.0, up: 3.2, size: 0.52, life: 0.45,
+        });
+      }
+      slot.wasStumbling = isStumbling;
+      slot.charClone.rotation.z = isStumbling ? Math.sin(this.time * 30 + i) * 0.34 : 0;
 
       const col = g.activeCenter ? CENTERS[g.activeCenter].color : g.color;
       (slot.ring.material as THREE.MeshBasicMaterial).color.set(col);

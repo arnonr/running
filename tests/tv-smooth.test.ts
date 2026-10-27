@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { stepTvClock } from '../src/config';
 import { nameBadgeTexture, NAME_BADGE_CACHE_LIMIT } from '../src/view/textures';
+import { createCenterAttachments, updateCenterAttachments } from '../src/view/player';
+import { MatchRoomCore } from '../src/net';
 
 describe('TV Mode 60 FPS Smooth Clock & Badge Cache', () => {
   it('advances elapsed time and distance smoothly across 60 FPS frames even while 10Hz snapshot phaseTimeLeft is unchanged', () => {
@@ -38,5 +40,29 @@ describe('TV Mode 60 FPS Smooth Clock & Badge Cache', () => {
     }
     const t3 = nameBadgeTexture('น้องเมย์', 1, '#f472b6');
     expect(t3).not.toBe(t1);
+  });
+
+  it('creates 9-Center 3D attachments for TV ghost runners and propagates flying/stumbling/sliding states', () => {
+    const attachments = createCenterAttachments();
+    expect(Object.keys(attachments)).toHaveLength(9);
+
+    updateCenterAttachments(attachments, 1, 1.5);
+    expect(attachments[1].visible).toBe(true);
+    expect(attachments[4].visible).toBe(false);
+
+    updateCenterAttachments(attachments, 4, 2.0);
+    expect(attachments[1].visible).toBe(false);
+    expect(attachments[4].visible).toBe(true);
+
+    const room = new MatchRoomCore();
+    room.join({ id: 'p1', name: 'นนท์', role: 'senior', color: '#38bdf8' }, { immediate: true });
+    room.hostCommand({ action: 'start_now' });
+    room.tick(3.6);
+    room.updateRunnerState('p1', { activeCenter: 1, y: 4.2, sliding: true, stumbling: true });
+    const r = room.getSnapshot().activeRunners.find((x) => x.id === 'p1');
+    expect(r?.activeCenter).toBe(1);
+    expect(r?.y).toBeCloseTo(4.2, 1);
+    expect(r?.sliding).toBe(true);
+    expect(r?.stumbling).toBe(true);
   });
 });

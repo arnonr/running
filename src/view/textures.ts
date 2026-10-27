@@ -290,6 +290,13 @@ export function lerpCenterBiome(progress01: number): CenterBiomePalette {
 }
 
 function canvas(w: number, h: number) {
+  if (typeof document === 'undefined') {
+    const g: CanvasRenderingContext2D = new Proxy({} as CanvasRenderingContext2D, {
+      get: () => () => g,
+      set: () => true,
+    });
+    return { c: { width: w, height: h } as unknown as HTMLCanvasElement, g };
+  }
   const c = document.createElement('canvas');
   c.width = w;
   c.height = h;

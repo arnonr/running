@@ -47,6 +47,8 @@ export interface RunnerNetState {
   collectedCount: number;
   rank: number;
   packOffsetZ: number;
+  sliding?: boolean;
+  stumbling?: boolean;
   isBot?: boolean;
 }
 
@@ -170,7 +172,7 @@ export class MatchRoomCore {
 
   updateRunnerState(
     id: string,
-    state: Partial<Pick<RunnerNetState, 'lane' | 'x' | 'y' | 'd' | 'score' | 'coins' | 'floor' | 'activeCenter' | 'collectedCount'>>,
+    state: Partial<Pick<RunnerNetState, 'lane' | 'x' | 'y' | 'd' | 'score' | 'coins' | 'floor' | 'activeCenter' | 'collectedCount' | 'sliding' | 'stumbling'>>,
   ) {
     const r = this.activeMap.get(id);
     if (!r) return; // Ignore updates from waitingQueue players
@@ -183,6 +185,8 @@ export class MatchRoomCore {
     if (state.floor !== undefined) r.floor = state.floor;
     if (state.activeCenter !== undefined) r.activeCenter = state.activeCenter;
     if (state.collectedCount !== undefined) r.collectedCount = state.collectedCount;
+    if (state.sliding !== undefined) r.sliding = state.sliding;
+    if (state.stumbling !== undefined) r.stumbling = state.stumbling;
   }
 
   addDemoBots(count = 4) {
@@ -280,13 +284,25 @@ export class MatchRoomCore {
         r.d = +(this.referenceDistance * botFactor).toFixed(1);
         r.lane = ((Math.floor(elapsed / (2.4 + idx * 0.5)) + idx) % 3 + 3) % 3;
         r.x = laneX(r.lane);
-        r.y = Math.sin(elapsed * 3 + idx) > 0.88 ? 1.4 : 0;
         r.floor = this.currentFloor;
         r.coins = Math.floor(elapsed * (1.8 + idx * 0.25));
         r.score = Math.floor(r.d * 2.2 + r.coins * 15);
         r.collectedCount = Math.min(9, Math.floor(p01 * 9));
-        const centerCycle = (Math.floor(elapsed / 19) + idx) % 9 + 1;
-        r.activeCenter = (elapsed % 19 < 4.5) ? (centerCycle as CenterId) : null;
+        const centerCycle = (Math.floor(elapsed / 14) + idx) % 9 + 1;
+        r.activeCenter = (elapsed % 14 < 5.5) ? (centerCycle as CenterId) : null;
+        if (r.activeCenter === 1) {
+          r.y = 4.2 + Math.sin(elapsed * 5 + idx) * 0.22;
+          r.sliding = false;
+          r.stumbling = false;
+        } else if (r.activeCenter === 7 || r.activeCenter === 9) {
+          r.y = Math.max(0, Math.sin(elapsed * 2.8 + idx) * 2.6);
+          r.sliding = false;
+          r.stumbling = false;
+        } else {
+          r.y = Math.sin(elapsed * 3 + idx) > 0.85 ? 1.5 : 0;
+          r.sliding = r.y === 0 && Math.sin(elapsed * 2.1 + idx * 1.9) > 0.9;
+          r.stumbling = !r.activeCenter && Math.sin(elapsed * 1.1 + idx * 2.7) > 0.95;
+        }
       }
 
       if (this.phaseTimeLeft <= 0) {

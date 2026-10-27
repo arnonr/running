@@ -437,6 +437,8 @@ async function main() {
           floor: sim.floor,
           activeCenter: sim.activeCenter,
           collectedCount: sim.collectedCenters.size,
+          sliding: sim.sliding,
+          stumbling: sim.stumbleSlow > 0.1 || sim.sinceStumble < 0.65,
         });
       }
     }
