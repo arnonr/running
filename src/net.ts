@@ -1,5 +1,6 @@
 import { DEFAULT_MATCH_DURATION, distanceAtTime, floorAtProgress, laneX } from './config';
 import type { CenterId } from './sim/types';
+import { sanitizeAvatarId, type AvatarId } from './view/avatars';
 
 export type RoomPhase = 'LOBBY' | 'COUNTDOWN' | 'RUNNING' | 'PODIUM';
 export type PlayerRole = 'junior' | 'senior' | 'uni' | 'public';
@@ -25,7 +26,7 @@ export interface PlayerProfile {
   name: string;
   role: PlayerRole;
   color: string;
-  avatar?: string;
+  avatar?: AvatarId;
   isBot?: boolean;
 }
 
@@ -34,6 +35,7 @@ export interface RunnerNetState {
   name: string;
   role: PlayerRole;
   color: string;
+  avatar: AvatarId;
   lane: number;
   x: number;
   y: number;
@@ -80,12 +82,12 @@ export function sanitizeNickname(raw: string): string {
   return Array.from(stripped).slice(0, 16).join('');
 }
 
-const BOT_PRESETS: Array<{ name: string; role: PlayerRole; color: string }> = [
-  { name: 'บอทสายฟ้า ⚡', role: 'senior', color: '#38bdf8' },
-  { name: 'น้องเทคโน 🤖', role: 'junior', color: '#f59e0b' },
-  { name: 'พี่วิศวะ 5G 📡', role: 'uni', color: '#a855f7' },
-  { name: 'กัปตันอวกาศ 🚀', role: 'public', color: '#ec4899' },
-  { name: 'หมอเมดเทค ➕', role: 'uni', color: '#22c55e' },
+const BOT_PRESETS: Array<{ name: string; role: PlayerRole; color: string; avatar: AvatarId }> = [
+  { name: 'บอทสายฟ้า ⚡', role: 'senior', color: '#38bdf8', avatar: 'non' },
+  { name: 'น้องเมย์ 🎀', role: 'junior', color: '#ec4899', avatar: 'may' },
+  { name: 'ดร.พราว 🧬', role: 'uni', color: '#22c55e', avatar: 'praw' },
+  { name: 'พี่คินวิศวะ 🤖', role: 'uni', color: '#f59e0b', avatar: 'kin' },
+  { name: 'กัปตันสกาย 🚀', role: 'public', color: '#a855f7', avatar: 'sky' },
 ];
 
 export class MatchRoomCore {
@@ -108,11 +110,13 @@ export class MatchRoomCore {
   ];
 
   join(profile: PlayerProfile): { queuedForNextRound: boolean } {
+    const cleanAvatar = sanitizeAvatarId(profile.avatar);
     const cleanProfile: PlayerProfile = {
       ...profile,
       name: sanitizeNickname(profile.name),
       role: profile.role || 'senior',
       color: profile.color || AVATAR_COLORS[0],
+      avatar: cleanAvatar,
     };
 
     if (this.phase === 'LOBBY') {
@@ -123,6 +127,7 @@ export class MatchRoomCore {
         name: cleanProfile.name,
         role: cleanProfile.role,
         color: cleanProfile.color,
+        avatar: cleanAvatar,
         lane: existing ? existing.lane : 1,
         x: existing ? existing.x : 0,
         y: 0,
@@ -145,6 +150,7 @@ export class MatchRoomCore {
       r.name = cleanProfile.name;
       r.role = cleanProfile.role;
       r.color = cleanProfile.color;
+      r.avatar = cleanAvatar;
       return { queuedForNextRound: false };
     }
 
@@ -186,6 +192,7 @@ export class MatchRoomCore {
         name: preset.name,
         role: preset.role,
         color: preset.color,
+        avatar: preset.avatar,
         isBot: true,
       });
     }
@@ -357,6 +364,7 @@ export class MatchRoomCore {
         name: p.name,
         role: p.role,
         color: p.color,
+        avatar: sanitizeAvatarId(p.avatar),
         lane: 1,
         x: 0,
         y: 0,
