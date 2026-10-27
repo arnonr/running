@@ -480,27 +480,27 @@ export class World {
       solarBack.position.set(2.15, 1.44, -0.03);
       solarBack.rotation.x = 0.48;
 
-      // Geodesic Botanical Biosphere Dome on Left Side
+      // Lush Eco-Park Tree & Solar Garden Planter on Left Side
       const planterBase = new THREE.Mesh(new THREE.CylinderGeometry(1.35, 1.48, 0.45, 16), slateMat);
       planterBase.position.set(-2.1, 0.22, 0);
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.22, 1.1, 10), new THREE.MeshLambertMaterial({ color: 0x78350f }));
-      trunk.position.set(-2.1, 0.8, 0);
-      const crown1 = new THREE.Mesh(new THREE.SphereGeometry(0.75, 12, 12), foliageMat1);
-      crown1.position.set(-2.1, 1.55, 0);
-      const crown2 = new THREE.Mesh(new THREE.SphereGeometry(0.55, 12, 12), foliageMat2);
-      crown2.position.set(-1.7, 1.35, 0.35);
-      const crown3 = new THREE.Mesh(new THREE.SphereGeometry(0.5, 12, 12), foliageMat2);
-      crown3.position.set(-2.45, 1.3, -0.25);
-      const bioCage = new THREE.Mesh(
-        new THREE.IcosahedronGeometry(1.32, 1),
-        new THREE.MeshBasicMaterial({ color: 0x4ade80, wireframe: true }),
-      );
-      bioCage.position.set(-2.1, 1.15, 0);
+      const planterRim = new THREE.Mesh(new THREE.TorusGeometry(1.36, 0.06, 8, 24), new THREE.MeshBasicMaterial({ color: 0x4ade80 }));
+      planterRim.rotation.x = Math.PI / 2;
+      planterRim.position.set(-2.1, 0.45, 0);
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.26, 1.35, 10), new THREE.MeshLambertMaterial({ color: 0x78350f }));
+      trunk.position.set(-2.1, 0.9, 0);
+      const crown1 = new THREE.Mesh(new THREE.SphereGeometry(0.88, 14, 14), foliageMat1);
+      crown1.position.set(-2.1, 1.85, 0);
+      const crown2 = new THREE.Mesh(new THREE.SphereGeometry(0.68, 14, 14), foliageMat2);
+      crown2.position.set(-1.65, 1.55, 0.35);
+      const crown3 = new THREE.Mesh(new THREE.SphereGeometry(0.64, 14, 14), foliageMat2);
+      crown3.position.set(-2.5, 1.5, -0.25);
+      const crownTop = new THREE.Mesh(new THREE.SphereGeometry(0.58, 12, 12), foliageMat2);
+      crownTop.position.set(-2.1, 2.45, 0);
 
       stat.add(
         basePad, mast, nacelle, nacelleCap,
         trackerPost, solarPanel, solarBack,
-        planterBase, trunk, crown1, crown2, crown3, bioCage,
+        planterBase, planterRim, trunk, crown1, crown2, crown3, crownTop,
       );
       this.centerStatic[4] = new Instanced(stat, SCENERY_POOL_LIMITS.staticPerCenter, scene, { name: 'c4-stat' });
 
@@ -600,20 +600,40 @@ export class World {
       stat.add(towerBase, spire, mwDish, serverPlinth, serverBox, serverCap);
       this.centerStatic[5] = new Instanced(stat, SCENERY_POOL_LIMITS.staticPerCenter, scene, { name: 'c5-stat' });
 
+      // Rotating 5G mmWave Phased-Array Crown & Omni Whip Antenna at Tower Peak
       const kin = new THREE.Group();
-      const wave1 = new THREE.Mesh(new THREE.TorusGeometry(1.25, 0.06, 10, 28), new THREE.MeshBasicMaterial({ color: 0xc084fc }));
-      const wave2 = new THREE.Mesh(new THREE.TorusGeometry(1.85, 0.05, 10, 28), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
-      wave2.rotation.y = Math.PI / 2;
-      const coreNode = new THREE.Mesh(new THREE.OctahedronGeometry(0.52, 1), new THREE.MeshPhongMaterial({ color: 0xf0abfc, emissive: 0x9333ea, shininess: 100 }));
-      kin.add(wave1, wave2, coreNode);
+      const crownHub = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.36, 0.85, 14), telecomSkin);
+      const whipMast = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.08, 1.35, 10), silverMat);
+      whipMast.position.y = 0.95;
+      const beacon5G = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 12), new THREE.MeshBasicMaterial({ color: 0xc084fc }));
+      beacon5G.position.y = 1.65;
+      const waveRing = new THREE.Mesh(new THREE.TorusGeometry(1.15, 0.055, 10, 28), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
+      waveRing.rotation.x = Math.PI / 2;
+      kin.add(crownHub, whipMast, beacon5G, waveRing);
+      for (let k = 0; k < 3; k++) {
+        const a = (k * Math.PI * 2) / 3;
+        const panel = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.78, 0.14), whiteMat);
+        panel.position.set(Math.cos(a) * 0.52, 0, Math.sin(a) * 0.52);
+        panel.rotation.y = -a + Math.PI / 2;
+        const ledBar = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.68, 0.16), new THREE.MeshBasicMaterial({ color: 0xc084fc }));
+        ledBar.position.set(Math.cos(a) * 0.54, 0, Math.sin(a) * 0.54);
+        ledBar.rotation.y = -a + Math.PI / 2;
+        kin.add(panel, ledBar);
+      }
       this.centerKinetic[5] = new Instanced(kin, SCENERY_POOL_LIMITS.kineticPerCenter, scene, { name: 'c5-kin' });
 
+      // Low-Earth-Orbit 5G Communications Relay Satellite with Gridded Solar Wings & Downlink Dish
       const over = new THREE.Group();
-      const innerCore = new THREE.Mesh(new THREE.OctahedronGeometry(0.62, 0), new THREE.MeshPhongMaterial({ color: 0x38bdf8, emissive: 0x0284c7 }));
-      const outerCage = new THREE.Mesh(new THREE.OctahedronGeometry(1.05, 0), new THREE.MeshBasicMaterial({ color: 0xc084fc, wireframe: true }));
-      const dataRing = new THREE.Mesh(new THREE.TorusGeometry(1.2, 0.04, 8, 24), new THREE.MeshBasicMaterial({ color: 0xf0abfc }));
-      dataRing.rotation.x = Math.PI / 3;
-      over.add(innerCore, outerCage, dataRing);
+      const satBody = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 1.05, 16), serverSkin);
+      const satWings = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.07, 0.72), solarSkinMat);
+      const satFrame = new THREE.Mesh(new THREE.BoxGeometry(3.28, 0.05, 0.78), silverMat);
+      satFrame.position.y = -0.02;
+      const downlinkDish = new THREE.Mesh(new THREE.ConeGeometry(0.55, 0.28, 18, 1, true), whiteMat);
+      downlinkDish.position.y = -0.65;
+      const dataRing = new THREE.Mesh(new THREE.TorusGeometry(0.85, 0.04, 8, 24), new THREE.MeshBasicMaterial({ color: 0xc084fc }));
+      dataRing.rotation.x = Math.PI / 2;
+      dataRing.position.y = -0.82;
+      over.add(satBody, satWings, satFrame, downlinkDish, dataRing);
       this.centerOverhead[5] = new Instanced(over, SCENERY_POOL_LIMITS.overheadPerCenter, scene, { name: 'c5-over' });
     }
 
@@ -773,18 +793,21 @@ export class World {
       deckRim.rotation.x = Math.PI / 2;
       deckRim.position.y = 4.85;
 
-      // Secondary Soccer-Ball Geodesic Radome (Solid white sphere core + teal geodesic frame lattice!)
-      const radomePed = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 1.05, 1.2, 14), radarTowerSkin);
+      // Secondary Doppler Radome Observatory (Solid white fiberglass radome sphere + structural collar & lightning arrestor)
+      const radomePed = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 1.05, 1.2, 16), radarTowerSkin);
       radomePed.position.set(2.2, 0.6, 0);
-      const radomeCore = new THREE.Mesh(new THREE.SphereGeometry(1.28, 18, 18), whiteMat);
-      radomeCore.position.set(2.2, 2.15, 0);
-      const radomeLattice = new THREE.Mesh(
-        new THREE.IcosahedronGeometry(1.32, 1),
-        new THREE.MeshBasicMaterial({ color: 0x0d9488, wireframe: true }),
-      );
-      radomeLattice.position.set(2.2, 2.15, 0);
+      const radomeCollar = new THREE.Mesh(new THREE.TorusGeometry(0.92, 0.07, 10, 24), slateMat);
+      radomeCollar.rotation.x = Math.PI / 2;
+      radomeCollar.position.set(2.2, 1.22, 0);
+      const radomeCore = new THREE.Mesh(new THREE.SphereGeometry(1.28, 24, 20), whiteMat);
+      radomeCore.position.set(2.2, 2.2, 0);
+      const radomeBand = new THREE.Mesh(new THREE.TorusGeometry(1.28, 0.04, 8, 28), new THREE.MeshBasicMaterial({ color: 0x0d9488 }));
+      radomeBand.rotation.x = Math.PI / 2;
+      radomeBand.position.set(2.2, 2.2, 0);
+      const arrestor = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.05, 0.65, 8), silverMat);
+      arrestor.position.set(2.2, 3.65, 0);
 
-      stat.add(towerFoot, tower, obsDeck, deckRim, radomePed, radomeCore, radomeLattice);
+      stat.add(towerFoot, tower, obsDeck, deckRim, radomePed, radomeCollar, radomeCore, radomeBand, arrestor);
       this.centerStatic[6] = new Instanced(stat, SCENERY_POOL_LIMITS.staticPerCenter, scene, { name: 'c6-stat' });
 
       // Parabolic Doppler Radar Dish with Yoke Mount & 3 Tripod Feedhorn Struts
@@ -959,7 +982,8 @@ export class World {
       const outerH = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.68, 0.36), whiteMat);
       const innerV = new THREE.Mesh(new THREE.BoxGeometry(0.52, 1.82, 0.48), roseChromeMat);
       const innerH = new THREE.Mesh(new THREE.BoxGeometry(1.82, 0.52, 0.48), roseChromeMat);
-      const centerGem = new THREE.Mesh(new THREE.OctahedronGeometry(0.32, 0), new THREE.MeshBasicMaterial({ color: 0xffe4e6 }));
+      const centerGem = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.54, 16), new THREE.MeshBasicMaterial({ color: 0xffe4e6 }));
+      centerGem.rotation.x = Math.PI / 2;
       const haloRing1 = new THREE.Mesh(new THREE.TorusGeometry(1.42, 0.07, 10, 28), whiteMat);
       const haloRing2 = new THREE.Mesh(new THREE.TorusGeometry(1.62, 0.045, 8, 28), roseChromeMat);
       haloRing2.rotation.y = Math.PI / 3;
@@ -1022,20 +1046,21 @@ export class World {
       }
 
       // Steel Launch Umbilical Tower with Crew Access Swing Arms
-      const gantryMast = new THREE.Mesh(new THREE.BoxGeometry(0.75, 8.6, 0.75), slateMat);
+      const gantrySkin = new THREE.MeshPhongMaterial({
+        map: architecturalTowerSkinTexture('#334155', '#38bdf8', '#f472b6'),
+        shininess: 65,
+      });
+      const gantryMast = new THREE.Mesh(new THREE.BoxGeometry(0.82, 8.6, 0.82), gantrySkin);
       gantryMast.position.set(1.85, 4.4, 0);
-      const gantryCage = new THREE.Mesh(
-        new THREE.BoxGeometry(0.84, 8.6, 0.84),
-        new THREE.MeshBasicMaterial({ color: 0x38bdf8, wireframe: true }),
-      );
-      gantryCage.position.set(1.85, 4.4, 0);
       for (const armY of [3.2, 5.6, 7.6]) {
+        const deckCollar = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.18, 1.02), silverMat);
+        deckCollar.position.set(1.85, armY, 0);
         const swingArm = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.24, 0.32), new THREE.MeshPhongMaterial({ color: 0x38bdf8 }));
         swingArm.position.set(1.1, armY, 0);
-        stat.add(swingArm);
+        stat.add(deckCollar, swingArm);
       }
 
-      stat.add(pad, coreStage, interstage, fairing, nose, escapeRod, mainBell, gantryMast, gantryCage);
+      stat.add(pad, coreStage, interstage, fairing, nose, escapeRod, mainBell, gantryMast);
       this.centerStatic[9] = new Instanced(stat, SCENERY_POOL_LIMITS.staticPerCenter, scene, { name: 'c9-stat' });
 
       // Orbiting Deep-Space CubeSat with Gold Mylar Foil, Comms Dish & Gridded Solar Wings
