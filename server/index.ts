@@ -29,10 +29,18 @@ function applyIncomingNetMessage(msg: NetMessage, ws?: WebSocket) {
     if (ws) clientPlayerIds.set(ws, msg.profile.id);
     room.join(msg.profile, { immediate: msg.immediate });
     broadcastSnapshot();
+  } else if (msg.type === 'leave') {
+    if (ws) clientPlayerIds.delete(ws);
+    room.leave(msg.id);
+    broadcastSnapshot();
   } else if (msg.type === 'state') {
     const prev = room.getRunnerState(msg.id);
     const urgent =
       !prev ||
+      (msg.state.name !== undefined && msg.state.name !== prev.name) ||
+      (msg.state.role !== undefined && msg.state.role !== prev.role) ||
+      (msg.state.color !== undefined && msg.state.color !== prev.color) ||
+      (msg.state.avatar !== undefined && msg.state.avatar !== prev.avatar) ||
       (msg.state.lane !== undefined && msg.state.lane !== prev.lane) ||
       (msg.state.sliding !== undefined && msg.state.sliding !== prev.sliding) ||
       (msg.state.stumbling !== undefined && msg.state.stumbling !== prev.stumbling) ||

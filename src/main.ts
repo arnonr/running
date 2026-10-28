@@ -70,9 +70,11 @@ async function main() {
   });
   savedProfile.avatar = sanitizeAvatarId(savedProfile.avatar);
   world.player.setAvatar(savedProfile.avatar);
+  world.player.setProfileBadge(savedProfile.name, 1, savedProfile.color);
 
   const net = new NetClient(isTvMode);
   let latestRoom: RoomSnapshot = net.getSnapshot();
+  let hasJoinedLobby = false;
   let joinedMatchId = -1;
   let soloRun = false;
   let state: Screen = 'start';
@@ -98,18 +100,25 @@ async function main() {
     ui.setMuted(audio.muted);
   };
 
+  const applyProfileUpdate = (prof: PlayerProfile) => {
+    savedProfile.name = prof.name;
+    savedProfile.role = prof.role;
+    savedProfile.color = prof.color;
+    savedProfile.avatar = sanitizeAvatarId(prof.avatar);
+    save('profile', savedProfile);
+    world.player.setAvatar(savedProfile.avatar);
+    world.player.setProfileBadge(savedProfile.name, 1, savedProfile.color);
+  };
+
   const ui = new UI(
     document.getElementById('ui')!,
     {
       joinQueue: (prof) => {
         audio.unlock();
         audio.click();
-        savedProfile.name = prof.name;
-        savedProfile.role = prof.role;
-        savedProfile.color = prof.color;
-        savedProfile.avatar = sanitizeAvatarId(prof.avatar);
-        save('profile', savedProfile);
-        world.player.setAvatar(savedProfile.avatar);
+        applyProfileUpdate(prof);
+        ui.updatePlayerPill(savedProfile);
+        hasJoinedLobby = true;
         soloRun = false;
         net.join(savedProfile, { immediate: true });
         const snap = net.getSnapshot();
@@ -117,7 +126,7 @@ async function main() {
           joinedMatchId = snap.matchId;
           const elapsed = Math.max(0, snap.matchDuration - snap.phaseTimeLeft);
           startMatchRun(snap.matchSeed, snap.matchDuration, elapsed);
-          ui.toast('🏁 ลงสนามร่วมวิ่งกับจอทีวีแล้ว! กดปุ่ม ซ้าย/กระโดด/กลิ้ง/ขวา ด้านล่างได้เลย!');
+          ui.toast(`🏁 "${savedProfile.name}" ลงสนามร่วมวิ่งกับจอทีวีแล้ว!`);
         } else if (snap.phase === 'COUNTDOWN') {
           state = 'countdown';
           ui.show('countdown');
@@ -125,8 +134,18 @@ async function main() {
           audio.countdownBeep(false);
         } else {
           ui.setLobbyReady(true);
-          ui.toast('✅ ประจำจุดปล่อยตัวแล้ว! ลองกดปุ่มซ้อมมือรอก่อนได้ — รอ Admin กดปล่อยตัวบนจอทีวี', 2600);
+          ui.toast(`✅ เข้าสู่ Lobby ในชื่อ "${savedProfile.name}" แล้ว! รอ Admin กดปล่อยตัวบนจอทีวี`, 2600);
         }
+      },
+      profileChange: (prof) => {
+        applyProfileUpdate(prof);
+        if (hasJoinedLobby && !isTvMode) {
+          net.join(savedProfile, { immediate: true });
+        }
+      },
+      editProfile: () => {
+        audio.unlock();
+        audio.click();
       },
       controlAction: (act) => {
         audio.unlock();
@@ -135,26 +154,21 @@ async function main() {
       playSoloNow: (prof) => {
         audio.unlock();
         audio.click();
-        savedProfile.name = prof.name;
-        savedProfile.role = prof.role;
-        savedProfile.color = prof.color;
-        savedProfile.avatar = sanitizeAvatarId(prof.avatar);
-        save('profile', savedProfile);
-        world.player.setAvatar(savedProfile.avatar);
+        applyProfileUpdate(prof);
+        ui.updatePlayerPill(savedProfile);
         soloRun = true;
         startMatchRun((Date.now() % 100000) + 1, DEFAULT_MATCH_DURATION);
       },
-      selectAvatar: (avatarId) => {
+      selectAvatar: (avatarId, prof) => {
         audio.unlock();
         audio.click();
-        savedProfile.avatar = sanitizeAvatarId(avatarId);
-        save('profile', savedProfile);
-        world.player.setAvatar(savedProfile.avatar);
+        applyProfileUpdate({ ...prof, avatar: sanitizeAvatarId(avatarId) });
+        ui.updatePlayerPill(savedProfile);
         world.player.warmUpAction('up');
-        const meta = AVATARS[savedProfile.avatar];
+        const meta = AVATARS[sanitizeAvatarId(savedProfile.avatar)];
         ui.toast(`${meta.icon} เลือกตัวละคร: ${meta.nameTh} (${meta.genderLabelTh})`, 1400);
-        if (!isTvMode) {
-          net.join(savedProfile);
+        if (hasJoinedLobby && !isTvMode) {
+          net.join(savedProfile, { immediate: true });
         }
       },
       resume: () => {
@@ -190,6 +204,10 @@ async function main() {
       },
       toggleTvMode: () => {
         isTvMode = !isTvMode;
+        if (isTvMode) {
+          hasJoinedLobby = false;
+          net.leave(savedProfile.id);
+        }
         net.setTvMode(isTvMode);
         ui.setTvMode(isTvMode);
         if (isTvMode && latestRoom.phase === 'RUNNING' && state !== 'play') {
@@ -202,10 +220,12 @@ async function main() {
     isTvMode,
   );
 
-  // Join automatically on startup so the player is visible in the Lobby
-  if (!isTvMode) {
-    net.join(savedProfile);
-  }
+  // Do NOT auto-join on startup: wait until the user enters their name & presses "เข้าสู่ Lobby" (#btn-join-sync)!
+  window.addEventListener('pagehide', () => {
+    if (hasJoinedLobby) {
+      net.leave(savedProfile.id);
+    }
+  });
 
   function toLobby(keepReady = false) {
     soloRun = false;
@@ -215,7 +235,7 @@ async function main() {
     world.fx.clear();
     audio.stopMusic();
     state = 'start';
-    ui.setLobbyReady(keepReady);
+    ui.setLobbyReady(keepReady && hasJoinedLobby);
     ui.show('start');
   }
 
@@ -239,7 +259,7 @@ async function main() {
 
     if (soloRun) return;
 
-    const isParticipant = isTvMode || snap.activeRunners.some((r) => r.id === savedProfile.id);
+    const isParticipant = isTvMode || (hasJoinedLobby && snap.activeRunners.some((r) => r.id === savedProfile.id));
     if (!isParticipant) return;
 
     if (snap.phase === 'COUNTDOWN' && state !== 'countdown') {
@@ -263,10 +283,14 @@ async function main() {
   });
 
   function publishRunnerStateNow() {
-    if (soloRun || isTvMode) return;
+    if (soloRun || isTvMode || !hasJoinedLobby) return;
     netPublishTimer = 0;
     const jumpLiftY = !sim.grounded && sim.vy > 0 && sim.y < 0.3 ? 0.35 : sim.y;
     net.sendRunnerState(savedProfile.id, {
+      name: savedProfile.name,
+      role: savedProfile.role,
+      color: savedProfile.color,
+      avatar: savedProfile.avatar,
       lane: sim.lane,
       x: +laneX(sim.lane).toFixed(2),
       y: +jumpLiftY.toFixed(2),
@@ -296,17 +320,23 @@ async function main() {
         world.player.warmUpAction(a);
         if (a === 'left') sim.lane = Math.max(0, sim.lane - 1);
         else if (a === 'right') sim.lane = Math.min(2, sim.lane + 1);
-        net.sendRunnerState(savedProfile.id, {
-          lane: sim.lane,
-          x: laneX(sim.lane),
-          y: a === 'up' ? 1.25 : 0,
-        });
-        if (a === 'up') {
-          window.setTimeout(() => {
-            if (state === 'start') {
-              net.sendRunnerState(savedProfile.id, { y: 0 });
-            }
-          }, 420);
+        if (hasJoinedLobby) {
+          net.sendRunnerState(savedProfile.id, {
+            name: savedProfile.name,
+            role: savedProfile.role,
+            color: savedProfile.color,
+            avatar: savedProfile.avatar,
+            lane: sim.lane,
+            x: laneX(sim.lane),
+            y: a === 'up' ? 1.25 : 0,
+          });
+          if (a === 'up') {
+            window.setTimeout(() => {
+              if (state === 'start' && hasJoinedLobby) {
+                net.sendRunnerState(savedProfile.id, { y: 0 });
+              }
+            }, 420);
+          }
         }
       }
       return;
@@ -502,6 +532,9 @@ async function main() {
     audio.rumble(rumble);
 
     const myRunner = latestRoom.activeRunners.find((r) => r.id === savedProfile.id);
+    const myRank = myRunner ? myRunner.rank : 1;
+    const badgeColor = sim.activeCenter ? CENTERS[sim.activeCenter].color : savedProfile.color;
+    world.player.setProfileBadge(savedProfile.name, myRank, badgeColor);
     const stageMeta = CENTERS[sim.stageCenter];
     const isLobbyWaiting = state === 'start' && !isTvMode;
     ui.hud({
@@ -518,7 +551,7 @@ async function main() {
       centerTimer: sim.centerTimer,
       shieldHits: sim.shieldHits,
       collectedCenters: sim.collectedCenters,
-      rank: myRunner ? myRunner.rank : 1,
+      rank: myRank,
       totalRunners: latestRoom.activeRunners.length || 1,
       soloRun,
     });

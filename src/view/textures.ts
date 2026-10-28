@@ -608,7 +608,7 @@ const nameBadgeCache = new Map<string, THREE.CanvasTexture>();
 
 /** Floating 3D Nameplate for Ghost Runners on the shared track / TV Arena (cached with 64-entry LRU bound). */
 export function nameBadgeTexture(name: string, rank: number, color: string) {
-  const shortName = name.slice(0, 12);
+  const shortName = Array.from((name || '').trim()).slice(0, 16).join('') || 'นักวิ่ง Techno';
   const key = `${rank}:${shortName}:${color}`;
   const hit = nameBadgeCache.get(key);
   if (hit) {
@@ -617,13 +617,13 @@ export function nameBadgeTexture(name: string, rank: number, color: string) {
     return hit;
   }
 
-  const W = 256, H = 64;
+  const W = 320, H = 64;
   let created: THREE.CanvasTexture;
   if (typeof document === 'undefined') {
     created = new THREE.CanvasTexture({ width: W, height: H } as unknown as HTMLCanvasElement);
   } else {
     const { c, g } = canvas(W, H);
-    g.fillStyle = 'rgba(15, 23, 42, 0.86)';
+    g.fillStyle = 'rgba(15, 23, 42, 0.88)';
     round(g, 4, 6, W - 8, H - 12, 24);
     g.fill();
     g.lineWidth = 4;
@@ -632,14 +632,14 @@ export function nameBadgeTexture(name: string, rank: number, color: string) {
     g.stroke();
 
     g.fillStyle = color;
-    g.font = 'bold 24px system-ui, sans-serif';
+    g.font = 'bold 23px system-ui, sans-serif';
     g.textAlign = 'left';
     g.textBaseline = 'middle';
-    g.fillText(`#${rank}`, 20, H / 2);
+    g.fillText(`#${rank}`, 18, H / 2);
 
     g.fillStyle = '#ffffff';
-    g.font = 'bold 22px system-ui, sans-serif';
-    g.fillText(shortName, 70, H / 2);
+    g.font = 'bold 21px system-ui, sans-serif';
+    g.fillText(shortName, 68, H / 2, W - 84);
     created = tex(c, false);
   }
 

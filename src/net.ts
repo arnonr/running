@@ -74,6 +74,7 @@ export type HostCommand =
   | { action: 'add_bots'; count?: number }
   | { action: 'remove_bots'; count?: number }
   | { action: 'clear_bots' }
+  | { action: 'clear_all' }
   | { action: 'force_lobby' };
 
 /** Strip HTML tags, control chars, and clamp nickname to 1..16 chars. */
@@ -183,10 +184,21 @@ export class MatchRoomCore {
 
   updateRunnerState(
     id: string,
-    state: Partial<Pick<RunnerNetState, 'lane' | 'x' | 'y' | 'd' | 'score' | 'coins' | 'floor' | 'activeCenter' | 'collectedCount' | 'sliding' | 'stumbling'>>,
+    state: Partial<Pick<RunnerNetState, 'name' | 'role' | 'color' | 'avatar' | 'lane' | 'x' | 'y' | 'd' | 'score' | 'coins' | 'floor' | 'activeCenter' | 'collectedCount' | 'sliding' | 'stumbling'>>,
   ) {
+    const waiting = this.waitingMap.get(id);
+    if (waiting) {
+      if (state.name !== undefined) waiting.name = sanitizeNickname(state.name);
+      if (state.role !== undefined) waiting.role = state.role;
+      if (state.color !== undefined) waiting.color = state.color;
+      if (state.avatar !== undefined) waiting.avatar = sanitizeAvatarId(state.avatar);
+    }
     const r = this.activeMap.get(id);
-    if (!r) return; // Ignore updates from waitingQueue players
+    if (!r) return; // Ignore positional updates from waitingQueue players
+    if (state.name !== undefined) r.name = sanitizeNickname(state.name);
+    if (state.role !== undefined) r.role = state.role;
+    if (state.color !== undefined) r.color = state.color;
+    if (state.avatar !== undefined) r.avatar = sanitizeAvatarId(state.avatar);
     if (state.lane !== undefined) r.lane = state.lane;
     if (state.x !== undefined) r.x = state.x;
     if (state.y !== undefined) r.y = state.y;
@@ -235,18 +247,44 @@ export class MatchRoomCore {
       const nb = parseInt(b.replace('bot-', ''), 10) || 0;
       return nb - na;
     });
+    if (botIds.length === 0) {
+      const remainingIds = [
+        ...Array.from(this.activeMap.keys()),
+        ...Array.from(this.waitingMap.keys()),
+      ];
+      for (let i = 0; i < count && i < remainingIds.length; i++) {
+        this.leave(remainingIds[i]);
+      }
+      return;
+    }
     for (let i = 0; i < count && i < botIds.length; i++) {
       this.leave(botIds[i]);
     }
   }
 
   clearDemoBots() {
+    let removedBots = 0;
     for (const [id, r] of Array.from(this.activeMap.entries())) {
-      if (r.isBot || id.startsWith('bot-')) this.leave(id);
+      if (r.isBot || id.startsWith('bot-')) {
+        this.leave(id);
+        removedBots++;
+      }
     }
     for (const [id, p] of Array.from(this.waitingMap.entries())) {
-      if (p.isBot || id.startsWith('bot-')) this.leave(id);
+      if (p.isBot || id.startsWith('bot-')) {
+        this.leave(id);
+        removedBots++;
+      }
     }
+    if (removedBots === 0) {
+      this.clearAllRunners();
+    }
+  }
+
+  clearAllRunners() {
+    this.activeMap.clear();
+    this.waitingMap.clear();
+    this.botSeeds.clear();
   }
 
   hostCommand(cmd: HostCommand) {
@@ -287,6 +325,10 @@ export class MatchRoomCore {
       }
       case 'clear_bots': {
         this.clearDemoBots();
+        break;
+      }
+      case 'clear_all': {
+        this.clearAllRunners();
         break;
       }
       case 'force_lobby': {
@@ -494,6 +536,7 @@ export class MatchRoomCore {
 
 export type NetMessage =
   | { type: 'join'; profile: PlayerProfile; immediate?: boolean }
+  | { type: 'leave'; id: string }
   | { type: 'state'; id: string; state: Partial<RunnerNetState> }
   | { type: 'host'; command: HostCommand }
   | { type: 'request_sync' }
@@ -514,6 +557,8 @@ export class NetClient {
   private isAuthorityTab = false;
   private lastAuthoritySnapshotAt = 0;
   private lastJoinedProfile: PlayerProfile | null = null;
+  private lastJoinedImmediate = true;
+  private lastWsMessageAt = 0;
   private timerId: number | null = null;
 
   constructor(private isTvMode = false) {
@@ -606,7 +651,8 @@ export class NetClient {
   }
 
   private pollHttpSnapshot() {
-    if (typeof fetch === 'undefined' || this.httpPollInFlight || this.wsConnected) return;
+    const wsActive = this.wsConnected && Date.now() - this.lastWsMessageAt < 1200;
+    if (typeof fetch === 'undefined' || this.httpPollInFlight || wsActive) return;
     this.httpPollInFlight = true;
     fetch(this.resolveHttpSyncUrl(), { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : null))
@@ -632,14 +678,22 @@ export class NetClient {
       ws.onopen = () => {
         opened = true;
         this.wsConnected = true;
+        this.lastWsMessageAt = Date.now();
         if (this.lastJoinedProfile) {
-          ws.send(JSON.stringify({ type: 'join', profile: this.lastJoinedProfile } satisfies NetMessage));
+          ws.send(
+            JSON.stringify({
+              type: 'join',
+              profile: this.lastJoinedProfile,
+              immediate: this.lastJoinedImmediate,
+            } satisfies NetMessage),
+          );
         }
       };
       ws.onmessage = (ev) => {
         try {
           const msg = JSON.parse(ev.data) as NetMessage;
           if (msg.type === 'snapshot') {
+            this.lastWsMessageAt = Date.now();
             this.latestSnapshot = msg.snapshot;
             this.emit();
           }
@@ -666,7 +720,7 @@ export class NetClient {
   }
 
   private handleChannelMessage(msg: NetMessage) {
-    if (this.wsConnected) return;
+    if (this.wsConnected && Date.now() - this.lastWsMessageAt < 1200) return;
     if (msg.type === 'snapshot') {
       if (!this.isAuthorityTab) {
         this.lastAuthoritySnapshotAt = Date.now();
@@ -681,9 +735,11 @@ export class NetClient {
       }
       return;
     }
-    // Apply joins, runner states, and host commands to our local room
+    // Apply joins, leaves, runner states, and host commands to our local room
     if (msg.type === 'join') {
       this.localRoom.join(msg.profile, { immediate: msg.immediate });
+    } else if (msg.type === 'leave') {
+      this.localRoom.leave(msg.id);
     } else if (msg.type === 'state') {
       this.localRoom.updateRunnerState(msg.id, msg.state);
     } else if (msg.type === 'host') {
@@ -704,9 +760,9 @@ export class NetClient {
       const now = performance.now();
       const dt = Math.min(0.25, (now - last) / 1000);
       last = now;
-      if (this.wsConnected) return;
+      if (this.wsConnected && Date.now() - this.lastWsMessageAt < 1200) return;
 
-      // Poll HTTP `/api/sync` every ~66ms when WebSocket is blocked by a reverse proxy (e.g. Nginx Proxy Manager with WS off)
+      // Poll HTTP `/api/sync` every ~66ms when WebSocket is blocked or stalled by a reverse proxy
       this.httpPollTick = (this.httpPollTick + 1) % 2;
       if (this.httpPollTick === 0) {
         this.pollHttpSnapshot();
@@ -739,19 +795,88 @@ export class NetClient {
   }
 
   join(profile: PlayerProfile, options?: { immediate?: boolean }) {
-    this.lastJoinedProfile = profile;
-    const msg: NetMessage = { type: 'join', profile, immediate: options?.immediate };
-    if (this.wsConnected && this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(msg));
-    } else {
-      this.postHttpMessage(msg);
-      this.localRoom.join(profile, options);
-      if (Date.now() - this.lastHttpSyncAt >= 2500 && (this.isAuthorityTab || Date.now() - this.lastAuthoritySnapshotAt >= 1200)) {
-        this.latestSnapshot = this.localRoom.getSnapshot();
+    const cleanAvatar = sanitizeAvatarId(profile.avatar);
+    const cleanProfile: PlayerProfile = {
+      ...profile,
+      name: sanitizeNickname(profile.name),
+      role: profile.role || 'senior',
+      color: profile.color || AVATAR_COLORS[0],
+      avatar: cleanAvatar,
+    };
+    this.lastJoinedProfile = cleanProfile;
+    this.lastJoinedImmediate = options?.immediate ?? true;
+    const msg: NetMessage = { type: 'join', profile: cleanProfile, immediate: this.lastJoinedImmediate };
+
+    this.localRoom.join(cleanProfile, { immediate: this.lastJoinedImmediate });
+
+    // Optimistically patch latestSnapshot immediately so UI & 3D badges reflect the new name/avatar without delay
+    for (const r of this.latestSnapshot.activeRunners) {
+      if (r.id === cleanProfile.id) {
+        r.name = cleanProfile.name;
+        r.role = cleanProfile.role;
+        r.color = cleanProfile.color;
+        r.avatar = cleanAvatar;
       }
-      this.bc?.postMessage(msg);
-      this.emit();
     }
+    for (const r of this.latestSnapshot.top10) {
+      if (r.id === cleanProfile.id) {
+        r.name = cleanProfile.name;
+        r.role = cleanProfile.role;
+        r.color = cleanProfile.color;
+        r.avatar = cleanAvatar;
+      }
+    }
+    for (const w of this.latestSnapshot.waitingQueue) {
+      if (w.id === cleanProfile.id) {
+        w.name = cleanProfile.name;
+        w.role = cleanProfile.role;
+        w.color = cleanProfile.color;
+        w.avatar = cleanAvatar;
+      }
+    }
+
+    if (this.wsConnected && this.ws?.readyState === WebSocket.OPEN) {
+      try {
+        this.ws.send(JSON.stringify(msg));
+      } catch {
+        // ignore WS send error; HTTP sync below will deliver
+      }
+    }
+    // Always post join via HTTP `/api/sync` as well so proxies/mobile networks never drop a name change
+    this.postHttpMessage(msg);
+    if (
+      Date.now() - this.lastHttpSyncAt >= 2500 &&
+      (this.isAuthorityTab || Date.now() - this.lastAuthoritySnapshotAt >= 1200)
+    ) {
+      this.latestSnapshot = this.localRoom.getSnapshot();
+    }
+    this.bc?.postMessage(msg);
+    this.emit();
+  }
+
+  leave(id: string) {
+    if (!id) return;
+    if (this.lastJoinedProfile?.id === id) {
+      this.lastJoinedProfile = null;
+    }
+    const msg: NetMessage = { type: 'leave', id };
+    this.localRoom.leave(id);
+    this.latestSnapshot = {
+      ...this.latestSnapshot,
+      activeRunners: this.latestSnapshot.activeRunners.filter((r) => r.id !== id),
+      top10: this.latestSnapshot.top10.filter((r) => r.id !== id),
+      waitingQueue: this.latestSnapshot.waitingQueue.filter((w) => w.id !== id),
+    };
+    if (this.wsConnected && this.ws?.readyState === WebSocket.OPEN) {
+      try {
+        this.ws.send(JSON.stringify(msg));
+      } catch {
+        // ignore WS send error
+      }
+    }
+    this.postHttpMessage(msg);
+    this.bc?.postMessage(msg);
+    this.emit();
   }
 
   sendRunnerState(id: string, state: Partial<RunnerNetState>) {
@@ -768,17 +893,20 @@ export class NetClient {
   sendHostCommand(command: HostCommand) {
     const msg: NetMessage = { type: 'host', command };
     if (this.wsConnected && this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(msg));
-    } else {
-      this.postHttpMessage(msg);
-      this.localRoom.hostCommand(command);
-      if (Date.now() - this.lastHttpSyncAt >= 2500) {
-        this.latestSnapshot = this.localRoom.getSnapshot();
+      try {
+        this.ws.send(JSON.stringify(msg));
+      } catch {
+        // ignore WS send error
       }
-      this.bc?.postMessage(msg);
-      this.bc?.postMessage({ type: 'snapshot', snapshot: this.latestSnapshot } satisfies NetMessage);
-      this.emit();
     }
+    this.postHttpMessage(msg);
+    this.localRoom.hostCommand(command);
+    if (Date.now() - this.lastHttpSyncAt >= 2500) {
+      this.latestSnapshot = this.localRoom.getSnapshot();
+    }
+    this.bc?.postMessage(msg);
+    this.bc?.postMessage({ type: 'snapshot', snapshot: this.latestSnapshot } satisfies NetMessage);
+    this.emit();
   }
 
   destroy() {

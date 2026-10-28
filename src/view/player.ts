@@ -10,6 +10,7 @@ import {
   solarArraySkinTexture,
   serverRackSkinTexture,
   bioreactorSkinTexture,
+  nameBadgeTexture,
 } from './textures';
 import {
   applyAvatarToCharacter, updateAvatarMotion, sanitizeAvatarId, type AvatarId,
@@ -26,6 +27,9 @@ export class PlayerView {
   avatarId: AvatarId = 'non';
   attachments: Record<CenterId, THREE.Group> = {} as Record<CenterId, THREE.Group>;
   private auraRing: THREE.Mesh;
+  private auraColor = '#38bdf8';
+  private nameBadge: THREE.Sprite;
+  private badgeKey = '';
   private lean = 0;
   private leanV = 0;
   private yaw = 0;
@@ -64,6 +68,12 @@ export class PlayerView {
     this.auraRing.position.y = 0.04;
     this.root.add(this.auraRing);
 
+    const spriteMat = new THREE.SpriteMaterial({ transparent: true, depthWrite: false });
+    this.nameBadge = new THREE.Sprite(spriteMat);
+    this.nameBadge.scale.set(1.6, 0.36, 1);
+    this.nameBadge.position.set(0, 2.1, 0);
+    this.root.add(this.nameBadge);
+
     this.attachments = createCenterAttachments();
     for (const grp of Object.values(this.attachments)) {
       this.root.add(grp);
@@ -91,10 +101,26 @@ export class PlayerView {
       const pulse = 1 + Math.sin(time * 10) * 0.12;
       this.auraRing.scale.set(pulse, pulse, 1);
     } else {
-      auraMat.color.set('#38bdf8');
-      auraMat.opacity = 0.45;
+      auraMat.color.set(this.auraColor || '#38bdf8');
+      auraMat.opacity = 0.55;
       this.auraRing.scale.set(1, 1, 1);
     }
+  }
+
+  /** Updates the 3D floating nameplate & aura ring color above the local player's character. */
+  setProfileBadge(name: string, rank = 1, color = '#38bdf8') {
+    const cleanName = (name || '').trim() || 'นักวิ่ง Techno';
+    this.auraColor = color || '#38bdf8';
+    const r = Math.max(1, rank || 1);
+    const key = `${r}:${cleanName}:${this.auraColor}`;
+    if (this.badgeKey !== key) {
+      this.badgeKey = key;
+      const sm = this.nameBadge.material as THREE.SpriteMaterial;
+      sm.map = nameBadgeTexture(cleanName, r, this.auraColor);
+      sm.needsUpdate = true;
+    }
+    const auraMat = this.auraRing.material as THREE.MeshBasicMaterial;
+    auraMat.color.set(this.auraColor);
   }
 
   /** Switches the runner's 3D character avatar (mesh island filtering + UV outfit skin + bone-rigged 3D hair/skirt/helmet). */

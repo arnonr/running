@@ -52,7 +52,9 @@ export function groupCentersByExhibitionFloor(collected: Iterable<CenterId>): Ex
 export interface UIHandlers {
   joinQueue(profile: PlayerProfile): void;
   playSoloNow(profile: PlayerProfile): void;
-  selectAvatar?(avatarId: AvatarId): void;
+  selectAvatar?(avatarId: AvatarId, profile: PlayerProfile): void;
+  profileChange?(profile: PlayerProfile): void;
+  editProfile?(): void;
   controlAction?(action: 'left' | 'right' | 'up' | 'down'): void;
   resume(): void;
   pause(): void;
@@ -114,6 +116,11 @@ export class UI {
     ).join('');
 
     const currentAvatar = sanitizeAvatarId(this.profile.avatar);
+    const defaultAvatarNames = new Set([
+      'นักวิ่ง Techno',
+      ...AVATAR_LIST.map((a) => `${a.nameTh} Techno`),
+    ]);
+    const initialInputValue = defaultAvatarNames.has(this.profile.name) ? '' : this.profile.name;
     const avatarsHtml = AVATAR_LIST.map(
       (av) =>
         `<button type="button" class="avatar-card ${currentAvatar === av.id ? 'on' : ''}" data-avatar="${av.id}" style="--av-accent:${av.accentHex}">
@@ -130,6 +137,11 @@ export class UI {
             <button class="icon-btn" id="btn-pause" aria-label="pause">${ICON.pause}</button>
             <button class="icon-btn" id="btn-mute" aria-label="mute"></button>
           </div>
+          <div class="player-pill" id="hud-player-pill">
+            <span class="pp-dot" id="hud-player-dot" style="background:${this.profile.color}"></span>
+            <span class="pp-name" id="hud-player-name">${AVATARS[currentAvatar].icon} ${this.profile.name}</span>
+          </div>
+          <button type="button" class="edit-profile-btn" id="btn-edit-profile">✏️ เปลี่ยนชื่อ / ตัวละคร</button>
           <div class="floor-pill">
             <b id="hud-floor">FLOOR 1 / 10</b>
             <small id="hud-zone">โถงนิทรรศการหลัก</small>
@@ -203,22 +215,25 @@ export class UI {
           <p class="sub-th">${GAME_TITLE.th}</p>
 
           <div class="form-row">
-            <label for="inp-name">ชื่อเล่นบนจอทีวี / Leaderboard (ไม่เกิน 16 ตัวอักษร)</label>
-            <input class="name-input" id="inp-name" maxlength="16" placeholder="เช่น นนท์ เทคโนฯ" value="${this.profile.name}" />
+            <label for="inp-name">1. กรอกชื่อตัวละครของคุณ (แสดงบนตัวละครและจอทีวี)</label>
+            <div class="name-input-wrap">
+              <input class="name-input" id="inp-name" maxlength="24" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" placeholder="พิมพ์ชื่อตัวละคร เช่น นนท์, เมย์..." value="${initialInputValue}" />
+              <button type="button" class="name-clear-btn" id="btn-clear-name" title="ล้างชื่อเพื่อพิมพ์ใหม่" aria-label="ล้างชื่อ">✕</button>
+            </div>
           </div>
 
           <div class="form-row">
-            <label>เลือกตัวละครนักวิ่ง 3D (5 สไตล์ · ชาย / หญิง / ชุดอวกาศ)</label>
+            <label>2. เลือกตัวละครนักวิ่ง 3D (5 สไตล์ · ชาย / หญิง / ชุดอวกาศ)</label>
             <div class="avatar-grid" id="avatar-grid">${avatarsHtml}</div>
           </div>
 
           <div class="form-row">
-            <label>ระดับชั้น / สถานะผู้เข้าชม</label>
+            <label>3. ระดับชั้น / สถานะผู้เข้าชม</label>
             <div class="role-grid" id="role-grid">${rolesHtml}</div>
           </div>
 
           <div class="form-row">
-            <label>สีออร่านักวิ่งประจำตัว</label>
+            <label>4. สีออร่านักวิ่งประจำตัว</label>
             <div class="color-row" id="color-row">${colorsHtml}</div>
           </div>
 
@@ -228,14 +243,14 @@ export class UI {
               <b id="ls-timer" style="color:#facc15">45s</b>
             </div>
             <div class="ls-sub" id="ls-desc">
-              ปัดซ้าย/ขวา/ขึ้น/ลง ที่ตัวละครเพื่อวอร์มอัพรอรอบใหม่เริ่มพร้อมกันบนจอทีวี!
+              กรอกชื่อและเลือกตัวละครด้านบน แล้วกดปุ่ม "เข้าสู่ Lobby" เพื่อส่งข้อมูลขึ้นจอทีวี!
             </div>
             <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">
               ${CENTER_LIST.map((c) => `<span style="font-size:11px;padding:2px 6px;border-radius:6px;background:rgba(15,23,42,.8);border:1px solid ${c.color}66" title="${c.nameTh} (${c.exhibitionFloorTh})">${c.icon} #${c.id} ${c.shortTh}</span>`).join('')}
             </div>
           </div>
 
-          <button class="big gold-btn" id="btn-join-sync">✅ ยืนยันตัวละคร · เข้าจุดปล่อยตัว</button>
+          <button class="big gold-btn" id="btn-join-sync">🚀 เข้าสู่ Lobby · ส่งข้อมูลขึ้นจอทีวี</button>
           <button class="big" id="btn-play-solo">⚡ วิ่งฝึกซ้อมเดี่ยว (ไม่ซิงค์ทีวี)</button>
         </div>
       </section>
@@ -349,8 +364,30 @@ export class UI {
 
     // Profile inputs
     const nameInp = this.el['inp-name'] as HTMLInputElement;
-    nameInp.addEventListener('input', () => {
-      this.profile.name = sanitizeNickname(nameInp.value);
+    const syncProfileFromInputs = () => {
+      const raw = (nameInp?.value || '').trim();
+      const avMeta = AVATARS[sanitizeAvatarId(this.profile.avatar)];
+      this.profile.name = raw ? sanitizeNickname(raw) : sanitizeNickname(`${avMeta.nameTh} Techno`);
+      this.updatePlayerPill();
+      this.handlers.profileChange?.({ ...this.profile });
+    };
+
+    nameInp.addEventListener('input', syncProfileFromInputs);
+    nameInp.addEventListener('change', syncProfileFromInputs);
+    nameInp.addEventListener('blur', syncProfileFromInputs);
+    nameInp.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        syncProfileFromInputs();
+        nameInp.blur();
+      }
+    });
+
+    this.el['btn-clear-name']?.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      nameInp.value = '';
+      syncProfileFromInputs();
+      nameInp.focus();
     });
 
     this.el['role-grid'].querySelectorAll<HTMLButtonElement>('[data-role]').forEach((btn) => {
@@ -358,6 +395,7 @@ export class UI {
         ev.stopPropagation();
         this.profile.role = btn.dataset.role as PlayerRole;
         this.el['role-grid'].querySelectorAll('.role-btn').forEach((b) => b.classList.toggle('on', b === btn));
+        syncProfileFromInputs();
       });
     });
 
@@ -366,6 +404,7 @@ export class UI {
         ev.stopPropagation();
         this.profile.color = btn.dataset.color!;
         this.el['color-row'].querySelectorAll('.color-dot').forEach((b) => b.classList.toggle('on', b === btn));
+        syncProfileFromInputs();
       });
     });
 
@@ -375,7 +414,8 @@ export class UI {
         const avId = sanitizeAvatarId(btn.dataset.avatar);
         this.profile.avatar = avId;
         this.el['avatar-grid'].querySelectorAll('.avatar-card').forEach((b) => b.classList.toggle('on', b === btn));
-        this.handlers.selectAvatar?.(avId);
+        syncProfileFromInputs();
+        this.handlers.selectAvatar?.(avId, { ...this.profile });
       });
     });
 
@@ -398,12 +438,24 @@ export class UI {
       });
 
     tap('btn-join-sync', () => {
-      this.profile.name = sanitizeNickname(nameInp.value);
+      syncProfileFromInputs();
       this.handlers.joinQueue({ ...this.profile });
     });
     tap('btn-play-solo', () => {
-      this.profile.name = sanitizeNickname(nameInp.value);
+      syncProfileFromInputs();
       this.handlers.playSoloNow({ ...this.profile });
+    });
+    tap('btn-edit-profile', () => {
+      this.setLobbyReady(false);
+      this.handlers.editProfile?.();
+      window.setTimeout(() => {
+        try {
+          nameInp.focus();
+          nameInp.select();
+        } catch {
+          // ignore
+        }
+      }, 60);
     });
     tap('btn-pause', () => this.handlers.pause());
     tap('btn-mute', () => this.handlers.toggleMute());
@@ -426,6 +478,20 @@ export class UI {
 
     for (const b of this.root.querySelectorAll('button, input')) {
       b.addEventListener('pointerdown', (e) => e.stopPropagation());
+    }
+    this.updatePlayerPill();
+  }
+
+  updatePlayerPill(profile?: PlayerProfile) {
+    if (profile) {
+      this.profile = { ...profile, avatar: sanitizeAvatarId(profile.avatar) };
+    }
+    const av = AVATARS[sanitizeAvatarId(this.profile.avatar)];
+    if (this.el['hud-player-name']) {
+      this.el['hud-player-name'].textContent = `${av.icon} ${this.profile.name} (${ROLE_LABELS[this.profile.role]})`;
+    }
+    if (this.el['hud-player-dot']) {
+      this.el['hud-player-dot'].style.background = this.profile.color;
     }
   }
 
@@ -475,6 +541,7 @@ export class UI {
     }
     const showHud = s === 'play' || s === 'pause' || (s === 'start' && this.lobbyReady);
     this.el.hud?.classList.toggle('on', showHud);
+    this.el['btn-edit-profile']?.classList.toggle('on', s === 'start' && this.lobbyReady);
     if (this.el['btn-mode-switch']) {
       this.el['btn-mode-switch'].style.display = this.touch || showHud ? 'none' : '';
     }
@@ -530,6 +597,15 @@ export class UI {
       const botCount = snap.activeRunners.filter((r) => r.isBot).length;
       const humanCount = snap.activeRunners.length - botCount;
       this.el['tv-active-count'].textContent = `${snap.activeRunners.length} คน (ผู้เล่น ${humanCount} · บอท ${botCount})`;
+      if (this.el['tv-btn-bot-clear']) {
+        if (botCount > 0) {
+          this.el['tv-btn-bot-clear'].textContent = `🤖 ล้างบอท (${botCount})`;
+        } else if (snap.activeRunners.length > 0) {
+          this.el['tv-btn-bot-clear'].textContent = `🧹 ล้างตัวละคร (${snap.activeRunners.length})`;
+        } else {
+          this.el['tv-btn-bot-clear'].textContent = `🤖 ล้างบอท (0)`;
+        }
+      }
     }
     if (this.el['tv-lb-list']) {
       const lbList = this.el['tv-lb-list'];
