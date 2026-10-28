@@ -1,4 +1,5 @@
 import QRCode from 'qrcode';
+import { sanitizeChannelId } from './net';
 
 declare const __LAN_IP__: string | undefined;
 
@@ -7,6 +8,7 @@ export interface LocationLike {
   hostname: string;
   port: string;
   pathname: string;
+  search?: string;
 }
 
 export function getInjectedLanIp(): string | undefined {
@@ -21,10 +23,13 @@ export function getInjectedLanIp(): string | undefined {
  * Resolves the URL that mobile players should open when scanning the TV Arena QR code.
  * If the TV browser was opened via `localhost` or `127.0.0.1`, substitutes `fallbackLanIp`
  * so phones on the same Wi-Fi connect to the host machine instead of their own loopback.
+ * When `channel` is provided (or `?ch=` is present in `loc.search`), appends `?ch=<channel>`
+ * so mobile scanners automatically join that TV's channel.
  */
 export function resolveMobileJoinUrl(
   loc: LocationLike = window.location,
   fallbackLanIp: string | undefined = getInjectedLanIp(),
+  channel?: string | number | null,
 ): string {
   const isLocalhost =
     loc.hostname === 'localhost' ||
@@ -36,7 +41,12 @@ export function resolveMobileJoinUrl(
   if (!pathPart.endsWith('/') && !pathPart.endsWith('.html')) {
     pathPart += '/';
   }
-  return `${loc.protocol}//${host}${portPart}${pathPart}`;
+  const searchCh = loc.search ? new URLSearchParams(loc.search).get('ch') : null;
+  const rawCh = channel ?? searchCh;
+  const queryPart = rawCh !== undefined && rawCh !== null && String(rawCh).trim() !== ''
+    ? `?ch=${sanitizeChannelId(rawCh)}`
+    : '';
+  return `${loc.protocol}//${host}${portPart}${pathPart}${queryPart}`;
 }
 
 /**

@@ -4,6 +4,14 @@ import { sanitizeAvatarId, type AvatarId } from './view/avatars';
 
 export type RoomPhase = 'LOBBY' | 'COUNTDOWN' | 'RUNNING' | 'PODIUM';
 export type PlayerRole = 'junior' | 'senior' | 'uni' | 'public';
+export type ChannelId = '1' | '2' | '3' | '4';
+
+export const CHANNEL_LIST: readonly ChannelId[] = ['1', '2', '3', '4'] as const;
+
+export function sanitizeChannelId(raw?: string | number | null): ChannelId {
+  const s = String(raw ?? '').trim();
+  return (CHANNEL_LIST as readonly string[]).includes(s) ? (s as ChannelId) : '1';
+}
 
 export const ROLE_LABELS: Record<PlayerRole, string> = {
   junior: 'ม.ต้น',
@@ -53,6 +61,7 @@ export interface RunnerNetState {
 }
 
 export interface RoomSnapshot {
+  channel?: ChannelId;
   matchId: number;
   phase: RoomPhase;
   phaseTimeLeft: number;
@@ -101,6 +110,7 @@ const BOT_PRESETS: Array<{ name: string; role: PlayerRole; color: string; avatar
 ];
 
 export class MatchRoomCore {
+  readonly channel: ChannelId;
   matchId = 1;
   phase: RoomPhase = 'LOBBY';
   phaseTimeLeft = 45;
@@ -118,6 +128,10 @@ export class MatchRoomCore {
     { name: 'น้องภูมิ ม.ปลาย', score: 8420, role: 'senior' },
     { name: 'เมย์ Techno', score: 7690, role: 'junior' },
   ];
+
+  constructor(channel: ChannelId = '1') {
+    this.channel = sanitizeChannelId(channel);
+  }
 
   join(profile: PlayerProfile, options?: { immediate?: boolean }): { queuedForNextRound: boolean } {
     const cleanAvatar = sanitizeAvatarId(profile.avatar);
@@ -518,6 +532,7 @@ export class MatchRoomCore {
     });
 
     return {
+      channel: this.channel,
       matchId: this.matchId,
       phase: this.phase,
       phaseTimeLeft: +Math.max(0, this.phaseTimeLeft).toFixed(1),
@@ -535,12 +550,74 @@ export class MatchRoomCore {
 }
 
 export type NetMessage =
-  | { type: 'join'; profile: PlayerProfile; immediate?: boolean }
-  | { type: 'leave'; id: string }
-  | { type: 'state'; id: string; state: Partial<RunnerNetState> }
-  | { type: 'host'; command: HostCommand }
-  | { type: 'request_sync' }
-  | { type: 'snapshot'; snapshot: RoomSnapshot };
+  | { type: 'join'; channel?: ChannelId; profile: PlayerProfile; immediate?: boolean }
+  | { type: 'leave'; channel?: ChannelId; id: string }
+  | { type: 'state'; channel?: ChannelId; id: string; state: Partial<RunnerNetState> }
+  | { type: 'host'; channel?: ChannelId; command: HostCommand }
+  | { type: 'request_sync'; channel?: ChannelId }
+  | { type: 'snapshot'; channel?: ChannelId; snapshot: RoomSnapshot };
+
+export class MultiChannelRoomRegistry {
+  private rooms = new Map<ChannelId, MatchRoomCore>();
+
+  constructor(private initialBots = 4) {
+    for (const ch of CHANNEL_LIST) {
+      const r = new MatchRoomCore(ch);
+      if (initialBots > 0) r.addDemoBots(initialBots);
+      this.rooms.set(ch, r);
+    }
+  }
+
+  getRoom(ch?: string | number | null): MatchRoomCore {
+    const cid = sanitizeChannelId(ch);
+    let r = this.rooms.get(cid);
+    if (!r) {
+      r = new MatchRoomCore(cid);
+      if (this.initialBots > 0) r.addDemoBots(this.initialBots);
+      this.rooms.set(cid, r);
+    }
+    return r;
+  }
+
+  applyMessage(
+    msg: NetMessage,
+    defaultCh?: string | number | null,
+  ): { room: MatchRoomCore; urgent: boolean } {
+    const room = this.getRoom(msg.channel ?? defaultCh);
+    let urgent = false;
+    if (msg.type === 'join') {
+      room.join(msg.profile, { immediate: msg.immediate });
+      urgent = true;
+    } else if (msg.type === 'leave') {
+      room.leave(msg.id);
+      urgent = true;
+    } else if (msg.type === 'state') {
+      const prev = room.getRunnerState(msg.id);
+      urgent =
+        !prev ||
+        (msg.state.name !== undefined && msg.state.name !== prev.name) ||
+        (msg.state.role !== undefined && msg.state.role !== prev.role) ||
+        (msg.state.color !== undefined && msg.state.color !== prev.color) ||
+        (msg.state.avatar !== undefined && msg.state.avatar !== prev.avatar) ||
+        (msg.state.lane !== undefined && msg.state.lane !== prev.lane) ||
+        (msg.state.sliding !== undefined && msg.state.sliding !== prev.sliding) ||
+        (msg.state.stumbling !== undefined && msg.state.stumbling !== prev.stumbling) ||
+        (msg.state.activeCenter !== undefined && msg.state.activeCenter !== prev.activeCenter) ||
+        (msg.state.y !== undefined && Math.abs(msg.state.y - prev.y) > 0.2);
+      room.updateRunnerState(msg.id, msg.state);
+    } else if (msg.type === 'host') {
+      room.hostCommand(msg.command);
+      urgent = true;
+    }
+    return { room, urgent };
+  }
+
+  tickAll(dt: number) {
+    for (const r of this.rooms.values()) {
+      r.tick(dt);
+    }
+  }
+}
 
 /**
  * Real-time client that connects to the booth WebSocket server (`ws://host:8787`) if running,
@@ -548,7 +625,8 @@ export type NetMessage =
  * works with zero setup.
  */
 export class NetClient {
-  private localRoom = new MatchRoomCore();
+  private channel: ChannelId;
+  private localRooms = new MultiChannelRoomRegistry(4);
   private ws: WebSocket | null = null;
   private wsConnected = false;
   private bc: BroadcastChannel | null = null;
@@ -561,33 +639,89 @@ export class NetClient {
   private lastWsMessageAt = 0;
   private timerId: number | null = null;
 
-  constructor(private isTvMode = false) {
-    // Seed local room with 4 friendly AI bots so solo or multi-tab testing always has a lively pack
-    this.localRoom.addDemoBots(4);
+  constructor(private isTvMode = false, initialChannel?: string | number | null) {
+    this.channel = sanitizeChannelId(initialChannel);
     this.latestSnapshot = this.localRoom.getSnapshot();
     this.isAuthorityTab = isTvMode;
 
     if (typeof window !== 'undefined') {
-      if ('BroadcastChannel' in window) {
-        this.bc = new BroadcastChannel('techno-surfers-room');
-        this.bc.onmessage = (ev: MessageEvent<NetMessage>) => {
-          this.handleChannelMessage(ev.data);
-        };
-        if (!this.isAuthorityTab) {
-          this.bc.postMessage({ type: 'request_sync' } satisfies NetMessage);
-        }
-      }
+      this.openBroadcastChannel();
       this.connectWebSocket();
       this.pollHttpSnapshot();
       this.startLocalLoop();
     }
   }
 
+  private get localRoom(): MatchRoomCore {
+    return this.localRooms.getRoom(this.channel);
+  }
+
+  getChannel(): ChannelId {
+    return this.channel;
+  }
+
+  private openBroadcastChannel() {
+    if (typeof window === 'undefined' || !('BroadcastChannel' in window)) return;
+    if (this.bc) {
+      this.bc.onmessage = null;
+      this.bc.close();
+      this.bc = null;
+    }
+    this.bc = new BroadcastChannel(`techno-surfers-room-ch-${this.channel}`);
+    this.bc.onmessage = (ev: MessageEvent<NetMessage>) => {
+      this.handleChannelMessage(ev.data);
+    };
+    if (!this.isAuthorityTab) {
+      this.bc.postMessage({ type: 'request_sync', channel: this.channel } satisfies NetMessage);
+    }
+  }
+
+  setChannel(ch: string | number | null) {
+    const nextCh = sanitizeChannelId(ch);
+    if (nextCh === this.channel) return;
+
+    // Leave previous channel if we had joined it
+    if (this.lastJoinedProfile) {
+      this.leave(this.lastJoinedProfile.id);
+    }
+
+    this.channel = nextCh;
+    this.lastHttpSyncAt = 0;
+    this.lastWsMessageAt = 0;
+    this.lastAuthoritySnapshotAt = 0;
+    this.httpPollInFlight = false;
+    this.latestSnapshot = this.localRoom.getSnapshot();
+
+    if (typeof window !== 'undefined') {
+      this.openBroadcastChannel();
+      if (this.ws) {
+        this.ws.onopen = null;
+        this.ws.onmessage = null;
+        this.ws.onclose = null;
+        this.ws.onerror = null;
+        try {
+          this.ws.close();
+        } catch {
+          // ignore
+        }
+        this.ws = null;
+      }
+      this.wsConnected = false;
+      this.connectWebSocket();
+      this.pollHttpSnapshot();
+    }
+    this.emit();
+  }
+
   setTvMode(tv: boolean) {
     this.isTvMode = tv;
     this.isAuthorityTab = tv;
     if (tv && !this.wsConnected) {
-      this.bc?.postMessage({ type: 'snapshot', snapshot: this.latestSnapshot } satisfies NetMessage);
+      this.bc?.postMessage({
+        type: 'snapshot',
+        channel: this.channel,
+        snapshot: this.latestSnapshot,
+      } satisfies NetMessage);
     }
   }
 
@@ -612,26 +746,27 @@ export class NetClient {
     // on the same origin first, and fall back to `:8787/ws` if same-origin isn't proxying WebSockets.
     const isViteDev = port === '5173' || port === '4173';
     if (isViteDev || (this.useDirectPortFallback && window.location.protocol !== 'https:')) {
-      return `${proto}//${hostname}:8787${basePath}/ws`;
+      return `${proto}//${hostname}:8787${basePath}/ws?ch=${this.channel}`;
     }
-    return `${proto}//${window.location.host}${basePath}/ws`;
+    return `${proto}//${window.location.host}${basePath}/ws?ch=${this.channel}`;
   }
 
-  private resolveHttpSyncUrl(): string {
+  private resolveHttpSyncUrl(ch: ChannelId = this.channel): string {
     const proto = window.location.protocol;
     const hostname = window.location.hostname || 'localhost';
     const port = window.location.port;
     const basePath = this.getBasePath();
     const isViteDev = port === '5173' || port === '4173';
     if (isViteDev) {
-      return `${proto}//${hostname}:8787${basePath}/api/sync`;
+      return `${proto}//${hostname}:8787${basePath}/api/sync?ch=${ch}`;
     }
-    return `${proto}//${window.location.host}${basePath}/api/sync`;
+    return `${proto}//${window.location.host}${basePath}/api/sync?ch=${ch}`;
   }
 
   private postHttpMessage(msg: NetMessage) {
     if (typeof fetch === 'undefined') return;
-    fetch(this.resolveHttpSyncUrl(), {
+    const targetCh = sanitizeChannelId(msg.channel ?? this.channel);
+    fetch(this.resolveHttpSyncUrl(targetCh), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(msg),
@@ -639,7 +774,7 @@ export class NetClient {
     })
       .then((r) => (r.ok ? r.json() : null))
       .then((snap: RoomSnapshot | null) => {
-        if (snap && snap.activeRunners) {
+        if (snap && snap.activeRunners && (!snap.channel || snap.channel === this.channel)) {
           this.lastHttpSyncAt = Date.now();
           this.latestSnapshot = snap;
           this.emit();
@@ -654,10 +789,16 @@ export class NetClient {
     const wsActive = this.wsConnected && Date.now() - this.lastWsMessageAt < 1200;
     if (typeof fetch === 'undefined' || this.httpPollInFlight || wsActive) return;
     this.httpPollInFlight = true;
-    fetch(this.resolveHttpSyncUrl(), { cache: 'no-store' })
+    const pollCh = this.channel;
+    fetch(this.resolveHttpSyncUrl(pollCh), { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : null))
       .then((snap: RoomSnapshot | null) => {
-        if (snap && snap.activeRunners) {
+        if (
+          pollCh === this.channel &&
+          snap &&
+          snap.activeRunners &&
+          (!snap.channel || snap.channel === this.channel)
+        ) {
           this.lastHttpSyncAt = Date.now();
           this.latestSnapshot = snap;
           this.emit();
@@ -673,9 +814,11 @@ export class NetClient {
 
   private connectWebSocket() {
     try {
+      const wsCh = this.channel;
       const ws = new WebSocket(this.resolveWsUrl());
       let opened = false;
       ws.onopen = () => {
+        if (wsCh !== this.channel) return;
         opened = true;
         this.wsConnected = true;
         this.lastWsMessageAt = Date.now();
@@ -683,6 +826,7 @@ export class NetClient {
           ws.send(
             JSON.stringify({
               type: 'join',
+              channel: this.channel,
               profile: this.lastJoinedProfile,
               immediate: this.lastJoinedImmediate,
             } satisfies NetMessage),
@@ -692,7 +836,10 @@ export class NetClient {
       ws.onmessage = (ev) => {
         try {
           const msg = JSON.parse(ev.data) as NetMessage;
-          if (msg.type === 'snapshot') {
+          if (
+            msg.type === 'snapshot' &&
+            (!msg.snapshot.channel || msg.snapshot.channel === this.channel)
+          ) {
             this.lastWsMessageAt = Date.now();
             this.latestSnapshot = msg.snapshot;
             this.emit();
@@ -702,16 +849,17 @@ export class NetClient {
         }
       };
       ws.onclose = () => {
+        if (this.ws !== ws) return;
         this.wsConnected = false;
         if (!opened) {
           this.useDirectPortFallback = !this.useDirectPortFallback;
         }
         setTimeout(() => {
-          if (!this.wsConnected) this.connectWebSocket();
+          if (!this.wsConnected && wsCh === this.channel) this.connectWebSocket();
         }, 1800);
       };
       ws.onerror = () => {
-        this.wsConnected = false;
+        if (this.ws === ws) this.wsConnected = false;
       };
       this.ws = ws;
     } catch {
@@ -720,9 +868,10 @@ export class NetClient {
   }
 
   private handleChannelMessage(msg: NetMessage) {
+    if (msg.channel && msg.channel !== this.channel) return;
     if (this.wsConnected && Date.now() - this.lastWsMessageAt < 1200) return;
     if (msg.type === 'snapshot') {
-      if (!this.isAuthorityTab) {
+      if (!this.isAuthorityTab && (!msg.snapshot.channel || msg.snapshot.channel === this.channel)) {
         this.lastAuthoritySnapshotAt = Date.now();
         this.latestSnapshot = msg.snapshot;
         this.emit();
@@ -731,7 +880,11 @@ export class NetClient {
     }
     if (msg.type === 'request_sync') {
       if (this.isAuthorityTab) {
-        this.bc?.postMessage({ type: 'snapshot', snapshot: this.latestSnapshot } satisfies NetMessage);
+        this.bc?.postMessage({
+          type: 'snapshot',
+          channel: this.channel,
+          snapshot: this.latestSnapshot,
+        } satisfies NetMessage);
       }
       return;
     }
@@ -749,7 +902,11 @@ export class NetClient {
       this.latestSnapshot = this.localRoom.getSnapshot();
     }
     if (this.isAuthorityTab) {
-      this.bc?.postMessage({ type: 'snapshot', snapshot: this.latestSnapshot } satisfies NetMessage);
+      this.bc?.postMessage({
+        type: 'snapshot',
+        channel: this.channel,
+        snapshot: this.latestSnapshot,
+      } satisfies NetMessage);
     }
     this.emit();
   }
@@ -779,7 +936,11 @@ export class NetClient {
       this.localRoom.tick(dt);
       this.latestSnapshot = this.localRoom.getSnapshot();
       if (this.isAuthorityTab) {
-        this.bc?.postMessage({ type: 'snapshot', snapshot: this.latestSnapshot } satisfies NetMessage);
+        this.bc?.postMessage({
+          type: 'snapshot',
+          channel: this.channel,
+          snapshot: this.latestSnapshot,
+        } satisfies NetMessage);
       }
       this.emit();
     }, 33);
@@ -805,7 +966,12 @@ export class NetClient {
     };
     this.lastJoinedProfile = cleanProfile;
     this.lastJoinedImmediate = options?.immediate ?? true;
-    const msg: NetMessage = { type: 'join', profile: cleanProfile, immediate: this.lastJoinedImmediate };
+    const msg: NetMessage = {
+      type: 'join',
+      channel: this.channel,
+      profile: cleanProfile,
+      immediate: this.lastJoinedImmediate,
+    };
 
     this.localRoom.join(cleanProfile, { immediate: this.lastJoinedImmediate });
 
@@ -859,7 +1025,7 @@ export class NetClient {
     if (this.lastJoinedProfile?.id === id) {
       this.lastJoinedProfile = null;
     }
-    const msg: NetMessage = { type: 'leave', id };
+    const msg: NetMessage = { type: 'leave', channel: this.channel, id };
     this.localRoom.leave(id);
     this.latestSnapshot = {
       ...this.latestSnapshot,
@@ -880,7 +1046,7 @@ export class NetClient {
   }
 
   sendRunnerState(id: string, state: Partial<RunnerNetState>) {
-    const msg: NetMessage = { type: 'state', id, state };
+    const msg: NetMessage = { type: 'state', channel: this.channel, id, state };
     if (this.wsConnected && this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
     } else {
@@ -891,7 +1057,7 @@ export class NetClient {
   }
 
   sendHostCommand(command: HostCommand) {
-    const msg: NetMessage = { type: 'host', command };
+    const msg: NetMessage = { type: 'host', channel: this.channel, command };
     if (this.wsConnected && this.ws?.readyState === WebSocket.OPEN) {
       try {
         this.ws.send(JSON.stringify(msg));
@@ -905,14 +1071,21 @@ export class NetClient {
       this.latestSnapshot = this.localRoom.getSnapshot();
     }
     this.bc?.postMessage(msg);
-    this.bc?.postMessage({ type: 'snapshot', snapshot: this.latestSnapshot } satisfies NetMessage);
+    this.bc?.postMessage({
+      type: 'snapshot',
+      channel: this.channel,
+      snapshot: this.latestSnapshot,
+    } satisfies NetMessage);
     this.emit();
   }
 
   destroy() {
     if (this.timerId !== null) clearInterval(this.timerId);
     this.bc?.close();
-    this.ws?.close();
+    if (this.ws) {
+      this.ws.onclose = null;
+      this.ws.close();
+    }
   }
 
   private emit() {
