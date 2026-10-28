@@ -533,6 +533,7 @@ export class NetClient {
         }
       }
       this.connectWebSocket();
+      this.pollHttpSnapshot();
       this.startLocalLoop();
     }
   }
@@ -546,14 +547,21 @@ export class NetClient {
   }
 
   private useDirectPortFallback = false;
+  private lastHttpSyncAt = 0;
+  private httpPollInFlight = false;
+  private httpPollTick = 0;
+
+  private getBasePath(): string {
+    return (window.location.pathname || '/')
+      .replace(/\/index\.html$/i, '')
+      .replace(/\/+$/, '');
+  }
 
   private resolveWsUrl(): string {
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const hostname = window.location.hostname || 'localhost';
     const port = window.location.port;
-    const basePath = (window.location.pathname || '/')
-      .replace(/\/index\.html$/i, '')
-      .replace(/\/+$/, '');
+    const basePath = this.getBasePath();
     // In Vite dev/preview (ports 5173 / 4173), connect directly to port 8787.
     // In production (Nginx / Nginx Proxy Manager at `/` or `/technosurfers/`), connect to `${basePath}/ws`
     // on the same origin first, and fall back to `:8787/ws` if same-origin isn't proxying WebSockets.
@@ -562,6 +570,59 @@ export class NetClient {
       return `${proto}//${hostname}:8787${basePath}/ws`;
     }
     return `${proto}//${window.location.host}${basePath}/ws`;
+  }
+
+  private resolveHttpSyncUrl(): string {
+    const proto = window.location.protocol;
+    const hostname = window.location.hostname || 'localhost';
+    const port = window.location.port;
+    const basePath = this.getBasePath();
+    const isViteDev = port === '5173' || port === '4173';
+    if (isViteDev) {
+      return `${proto}//${hostname}:8787${basePath}/api/sync`;
+    }
+    return `${proto}//${window.location.host}${basePath}/api/sync`;
+  }
+
+  private postHttpMessage(msg: NetMessage) {
+    if (typeof fetch === 'undefined') return;
+    fetch(this.resolveHttpSyncUrl(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(msg),
+      keepalive: true,
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((snap: RoomSnapshot | null) => {
+        if (snap && snap.activeRunners) {
+          this.lastHttpSyncAt = Date.now();
+          this.latestSnapshot = snap;
+          this.emit();
+        }
+      })
+      .catch(() => {
+        // ignore network error; local fallback remains active
+      });
+  }
+
+  private pollHttpSnapshot() {
+    if (typeof fetch === 'undefined' || this.httpPollInFlight || this.wsConnected) return;
+    this.httpPollInFlight = true;
+    fetch(this.resolveHttpSyncUrl(), { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((snap: RoomSnapshot | null) => {
+        if (snap && snap.activeRunners) {
+          this.lastHttpSyncAt = Date.now();
+          this.latestSnapshot = snap;
+          this.emit();
+        }
+      })
+      .catch(() => {
+        // ignore network error
+      })
+      .finally(() => {
+        this.httpPollInFlight = false;
+      });
   }
 
   private connectWebSocket() {
@@ -644,6 +705,16 @@ export class NetClient {
       const dt = Math.min(0.25, (now - last) / 1000);
       last = now;
       if (this.wsConnected) return;
+
+      // Poll HTTP `/api/sync` every ~66ms when WebSocket is blocked by a reverse proxy (e.g. Nginx Proxy Manager with WS off)
+      this.httpPollTick = (this.httpPollTick + 1) % 2;
+      if (this.httpPollTick === 0) {
+        this.pollHttpSnapshot();
+      }
+      if (Date.now() - this.lastHttpSyncAt < 2500) {
+        return;
+      }
+
       // If a TV authority tab is actively broadcasting snapshots, do not overwrite with our localRoom!
       if (!this.isAuthorityTab && Date.now() - this.lastAuthoritySnapshotAt < 1200) {
         return;
@@ -673,8 +744,9 @@ export class NetClient {
     if (this.wsConnected && this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
     } else {
+      this.postHttpMessage(msg);
       this.localRoom.join(profile, options);
-      if (this.isAuthorityTab || Date.now() - this.lastAuthoritySnapshotAt >= 1200) {
+      if (Date.now() - this.lastHttpSyncAt >= 2500 && (this.isAuthorityTab || Date.now() - this.lastAuthoritySnapshotAt >= 1200)) {
         this.latestSnapshot = this.localRoom.getSnapshot();
       }
       this.bc?.postMessage(msg);
@@ -687,6 +759,7 @@ export class NetClient {
     if (this.wsConnected && this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
     } else {
+      this.postHttpMessage(msg);
       this.localRoom.updateRunnerState(id, state);
       this.bc?.postMessage(msg);
     }
@@ -697,8 +770,11 @@ export class NetClient {
     if (this.wsConnected && this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
     } else {
+      this.postHttpMessage(msg);
       this.localRoom.hostCommand(command);
-      this.latestSnapshot = this.localRoom.getSnapshot();
+      if (Date.now() - this.lastHttpSyncAt >= 2500) {
+        this.latestSnapshot = this.localRoom.getSnapshot();
+      }
       this.bc?.postMessage(msg);
       this.bc?.postMessage({ type: 'snapshot', snapshot: this.latestSnapshot } satisfies NetMessage);
       this.emit();

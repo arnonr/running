@@ -503,12 +503,15 @@ async function main() {
 
     const myRunner = latestRoom.activeRunners.find((r) => r.id === savedProfile.id);
     const stageMeta = CENTERS[sim.stageCenter];
+    const isLobbyWaiting = state === 'start' && !isTvMode;
     ui.hud({
       score: Math.floor(sim.score),
       coins: sim.coins,
       mult: sim.mult,
       floor: sim.floor,
-      zoneNameTh: `${stageMeta.icon} ด่าน ${sim.stageIndex + 1}/9 · ${stageMeta.shortTh}`,
+      zoneNameTh: isLobbyWaiting
+        ? '🟢 ประจำจุดปล่อยตัวแล้ว · รอ Admin กดเริ่มบนจอทีวี!'
+        : `${stageMeta.icon} ด่าน ${sim.stageIndex + 1}/9 · ${stageMeta.shortTh}`,
       timeLeft: sim.timeLeft,
       progress01: sim.progress01,
       activeCenter: sim.activeCenter,

@@ -24,13 +24,47 @@ const MIME_TYPES: Record<string, string> = {
   '.woff2': 'font/woff2',
 };
 
+function applyIncomingNetMessage(msg: NetMessage, ws?: WebSocket) {
+  if (msg.type === 'join') {
+    if (ws) clientPlayerIds.set(ws, msg.profile.id);
+    room.join(msg.profile, { immediate: msg.immediate });
+    broadcastSnapshot();
+  } else if (msg.type === 'state') {
+    const prev = room.getRunnerState(msg.id);
+    const urgent =
+      !prev ||
+      (msg.state.lane !== undefined && msg.state.lane !== prev.lane) ||
+      (msg.state.sliding !== undefined && msg.state.sliding !== prev.sliding) ||
+      (msg.state.stumbling !== undefined && msg.state.stumbling !== prev.stumbling) ||
+      (msg.state.activeCenter !== undefined && msg.state.activeCenter !== prev.activeCenter) ||
+      (msg.state.y !== undefined && Math.abs(msg.state.y - prev.y) > 0.2);
+    room.updateRunnerState(msg.id, msg.state);
+    if (urgent) {
+      broadcastSnapshotThrottled();
+    }
+  } else if (msg.type === 'host') {
+    room.hostCommand(msg.command);
+    broadcastSnapshot();
+  }
+}
+
 const httpServer = createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  req.socket?.setNoDelay?.(true);
+
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
   const fullUrl = req.url || '/';
   const [rawPath, queryString] = fullUrl.split('?');
 
   // If accessed at `/technosurfers` without trailing slash, redirect to `/technosurfers/` so relative assets (`./assets/...`) resolve under `/technosurfers/`
-  if (rawPath === '/technosurfers') {
+  if (rawPath === '/technosurfers' && req.method === 'GET') {
     const qs = queryString ? `?${queryString}` : '';
     res.writeHead(302, { Location: `/technosurfers/${qs}` });
     res.end();
@@ -40,8 +74,30 @@ const httpServer = createServer(async (req, res) => {
   // Support both root (`/`) and subpath (`/technosurfers/...`) requests seamlessly
   const strippedPath = rawPath.replace(/^\/technosurfers(?=\/|$)/, '') || '/';
 
-  if (strippedPath === '/health' || strippedPath === '/status') {
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+  if (strippedPath === '/api/sync' || strippedPath === '/health' || strippedPath === '/status') {
+    if (req.method === 'POST') {
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) {
+        chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+      }
+      try {
+        const rawBody = Buffer.concat(chunks).toString('utf8');
+        if (rawBody) {
+          const parsed = JSON.parse(rawBody) as NetMessage | NetMessage[];
+          if (Array.isArray(parsed)) {
+            for (const m of parsed) applyIncomingNetMessage(m);
+          } else {
+            applyIncomingNetMessage(parsed);
+          }
+        }
+      } catch {
+        // ignore malformed JSON
+      }
+    }
+    res.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+    });
     res.end(JSON.stringify(room.getSnapshot()));
     return;
   }
@@ -113,27 +169,7 @@ wss.on('connection', (ws, req) => {
   ws.on('message', (raw) => {
     try {
       const msg = JSON.parse(String(raw)) as NetMessage;
-      if (msg.type === 'join') {
-        clientPlayerIds.set(ws, msg.profile.id);
-        room.join(msg.profile, { immediate: msg.immediate });
-        broadcastSnapshot();
-      } else if (msg.type === 'state') {
-        const prev = room.getRunnerState(msg.id);
-        const urgent =
-          !prev ||
-          (msg.state.lane !== undefined && msg.state.lane !== prev.lane) ||
-          (msg.state.sliding !== undefined && msg.state.sliding !== prev.sliding) ||
-          (msg.state.stumbling !== undefined && msg.state.stumbling !== prev.stumbling) ||
-          (msg.state.activeCenter !== undefined && msg.state.activeCenter !== prev.activeCenter) ||
-          (msg.state.y !== undefined && Math.abs(msg.state.y - prev.y) > 0.2);
-        room.updateRunnerState(msg.id, msg.state);
-        if (urgent) {
-          broadcastSnapshotThrottled();
-        }
-      } else if (msg.type === 'host') {
-        room.hostCommand(msg.command);
-        broadcastSnapshot();
-      }
+      applyIncomingNetMessage(msg, ws);
     } catch {
       // ignore invalid JSON
     }
