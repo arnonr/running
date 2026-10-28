@@ -84,29 +84,25 @@ curl http://127.0.0.1:8787/technosurfers/health
 1. ไปที่เมนู **Hosts** → **Proxy Hosts**
 2. คลิกปุ่มจุด 3 จุดท้ายโดเมน **`it.technopark.kmutnb.ac.th`** แล้วเลือก **Edit**
 3. ในแท็บแรก (**Details**):
-   - เปิดสวิตช์ **Websockets Support** ให้เป็น **ON (สีเขียว)** *(สำคัญมากสำหรับการซิงก์มือถือกับจอ TV)*
-4. ไปที่แท็บ **Advanced** (แนะนำวิธีนี้ชัวร์ที่สุดสำหรับ Subpath + WebSocket) แล้ววางโค้ดด้านล่างลงในช่อง **Custom Nginx Configuration**:
+   - ⚠️ **ให้คงสวิตช์ `Websockets Support` ไว้เป็น `OFF` (ปิด) เหมือนเดิม** *(ห้ามเปิดสวิตช์รวมในหน้านี้ เพราะโปรเจกต์อื่นใน Custom Locations มีการใส่ `proxy_http_version 1.1;` ไว้แล้ว หากเปิดสวิตช์รวมจะเกิด Error `duplicate proxy_http_version`)*
+4. ไปที่แท็บ **Advanced** แล้ววางโค้ดด้านล่างต่อท้ายในช่อง **Custom Nginx Configuration** (โค้ดชุดนี้เปิด WebSocket เฉพาะของ `/technosurfers/` ให้ในตัวแล้ว):
 
 ```nginx
-# เปลี่ยน /technosurfers (ไม่มี /) ให้มี / ปิดท้ายอัตโนมัติ
-location = /technosurfers {
-    return 302 $scheme://$http_host/technosurfers/$is_args$args;
-}
-
-# ส่งต่อทั้งหน้าเว็บ 3D และ WebSocket (/technosurfers/ws) ไปยังพอร์ต 8787
-location ^~ /technosurfers/ {
-    proxy_pass http://127.0.0.1:8787/technosurfers/;
+location /technosurfers/ {
+    proxy_pass http://172.16.214.81:8787/technosurfers/;
     proxy_http_version 1.1;
     proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection "Upgrade";
+    proxy_set_header Connection "upgrade";
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_read_timeout 86400s;
     proxy_send_timeout 86400s;
-    proxy_buffering off;
-    tcp_nodelay on;
+}
+
+location = /technosurfers {
+    return 301 $scheme://$host/technosurfers/;
 }
 ```
 
