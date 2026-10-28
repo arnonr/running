@@ -263,6 +263,21 @@ html, body {
   background: rgba(255,255,255,.05); color: #cbd5e1; font-size: 12px; font-weight: 700; cursor: pointer;
 }
 .role-btn.on { background: rgba(56,189,248,.22); border-color: var(--sky); color: #fff; }
+.ch-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.ch-btn {
+  padding: 7px 6px; border-radius: 10px; border: 1.5px solid var(--line);
+  background: rgba(15, 23, 42, 0.78); color: #cbd5e1; font-size: 12px; font-weight: 900;
+  cursor: pointer; transition: transform .15s, border-color .15s, background .15s;
+}
+.ch-btn.on {
+  background: linear-gradient(135deg, rgba(250, 204, 21, 0.28), rgba(245, 158, 11, 0.22));
+  border-color: var(--gold); color: var(--gold);
+  box-shadow: 0 0 12px rgba(250, 204, 21, 0.3);
+}
+.tv-ch-badge {
+  padding: 6px 14px; border-radius: 999px; font-size: 13px; font-weight: 900;
+  background: rgba(250, 204, 21, 0.22); border: 1.5px solid var(--gold); color: var(--gold);
+}
 .avatar-grid {
   display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px;
 }

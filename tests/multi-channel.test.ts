@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CHANNEL_LIST,
   MultiChannelRoomRegistry,
+  NetClient,
   sanitizeChannelId,
 } from '../src/net';
 import { buildJoinQrSvg, resolveMobileJoinUrl } from '../src/qr';
@@ -107,5 +108,29 @@ describe('Multi-Channel Booth Arena (CH 1 - CH 4)', () => {
 
     const svg = buildJoinQrSvg(urlCh3);
     expect(svg).toContain('?ch=3');
+  });
+
+  it('switches NetClient active channel cleanly, leaving old channel and isolating state per channel', () => {
+    const net = new NetClient(false, '2');
+    expect(net.getChannel()).toBe('2');
+    expect(net.getSnapshot().channel).toBe('2');
+
+    net.join(
+      { id: 'p-net', name: 'คิน CH2', role: 'uni', color: '#f59e0b', avatar: 'kin' },
+      { immediate: true },
+    );
+    expect(net.getSnapshot().activeRunners.some((r) => r.id === 'p-net')).toBe(true);
+
+    // Switch to CH 4 -> automatically leaves CH 2 and switches snapshot to CH 4
+    net.setChannel('4');
+    expect(net.getChannel()).toBe('4');
+    expect(net.getSnapshot().channel).toBe('4');
+    expect(net.getSnapshot().activeRunners.some((r) => r.id === 'p-net')).toBe(false);
+
+    // Switching back to CH 2 confirms p-net was removed when leaving CH 2
+    net.setChannel('2');
+    expect(net.getSnapshot().channel).toBe('2');
+    expect(net.getSnapshot().activeRunners.some((r) => r.id === 'p-net')).toBe(false);
+    net.destroy();
   });
 });

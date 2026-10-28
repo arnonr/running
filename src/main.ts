@@ -11,13 +11,31 @@ import {
   SPEED, DEFAULT_MATCH_DURATION, VIEW_AHEAD, CENTERS,
   stepTvClock, laneX,
 } from './config';
-import { NetClient, AVATAR_COLORS, type PlayerProfile, type RoomSnapshot } from './net';
+import {
+  NetClient, AVATAR_COLORS, sanitizeChannelId,
+  type PlayerProfile, type RoomSnapshot, type ChannelId,
+} from './net';
 import { sanitizeAvatarId, AVATARS } from './view/avatars';
 import type { SimEvent, CenterId } from './sim/types';
 
 const params = new URLSearchParams(location.search);
 const TEST = params.has('test');
 let isTvMode = params.get('mode') === 'tv';
+let currentChannel: ChannelId = sanitizeChannelId(params.get('ch'));
+
+function syncUrlQueryParams() {
+  try {
+    const nextParams = new URLSearchParams(window.location.search);
+    if (isTvMode) nextParams.set('mode', 'tv');
+    else nextParams.delete('mode');
+    nextParams.set('ch', currentChannel);
+    const qs = nextParams.toString();
+    const nextUrl = `${window.location.pathname}${qs ? `?${qs}` : ''}${window.location.hash || ''}`;
+    window.history.replaceState(null, '', nextUrl);
+  } catch {
+    // ignore history errors
+  }
+}
 
 const nextFrame = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
 
@@ -72,7 +90,7 @@ async function main() {
   world.player.setAvatar(savedProfile.avatar);
   world.player.setProfileBadge(savedProfile.name, 1, savedProfile.color);
 
-  const net = new NetClient(isTvMode);
+  const net = new NetClient(isTvMode, currentChannel);
   let latestRoom: RoomSnapshot = net.getSnapshot();
   let hasJoinedLobby = false;
   let joinedMatchId = -1;
@@ -126,7 +144,7 @@ async function main() {
           joinedMatchId = snap.matchId;
           const elapsed = Math.max(0, snap.matchDuration - snap.phaseTimeLeft);
           startMatchRun(snap.matchSeed, snap.matchDuration, elapsed);
-          ui.toast(`🏁 "${savedProfile.name}" ลงสนามร่วมวิ่งกับจอทีวีแล้ว!`);
+          ui.toast(`🏁 "${savedProfile.name}" ลงสนาม CH ${currentChannel} ร่วมวิ่งกับจอทีวีแล้ว!`);
         } else if (snap.phase === 'COUNTDOWN') {
           state = 'countdown';
           ui.show('countdown');
@@ -134,8 +152,26 @@ async function main() {
           audio.countdownBeep(false);
         } else {
           ui.setLobbyReady(true);
-          ui.toast(`✅ เข้าสู่ Lobby ในชื่อ "${savedProfile.name}" แล้ว! รอ Admin กดปล่อยตัวบนจอทีวี`, 2600);
+          ui.toast(`✅ เข้าสู่ Lobby (CH ${currentChannel}) ในชื่อ "${savedProfile.name}" แล้ว! รอ Admin กดปล่อยตัวบนจอทีวี`, 2600);
         }
+      },
+      selectChannel: (ch) => {
+        const nextCh = sanitizeChannelId(ch);
+        if (nextCh === currentChannel) return;
+        audio.unlock();
+        audio.click();
+        currentChannel = nextCh;
+        hasJoinedLobby = false;
+        joinedMatchId = -1;
+        tvElapsed = 0;
+        ui.setLobbyReady(false);
+        syncUrlQueryParams();
+        ui.setChannel(currentChannel);
+        net.setChannel(currentChannel);
+        if (!isTvMode && state !== 'start') {
+          toLobby(false);
+        }
+        ui.toast(`📡 สลับเป็นช่องสัญญาณ CH ${currentChannel} แล้ว!`, 1800);
       },
       profileChange: (prof) => {
         applyProfileUpdate(prof);
@@ -208,8 +244,10 @@ async function main() {
           hasJoinedLobby = false;
           net.leave(savedProfile.id);
         }
+        syncUrlQueryParams();
         net.setTvMode(isTvMode);
         ui.setTvMode(isTvMode);
+        ui.setChannel(currentChannel);
         if (isTvMode && latestRoom.phase === 'RUNNING' && state !== 'play') {
           startMatchRun(latestRoom.matchSeed, latestRoom.matchDuration);
         }
@@ -218,6 +256,7 @@ async function main() {
     audio.muted,
     savedProfile,
     isTvMode,
+    currentChannel,
   );
 
   // Do NOT auto-join on startup: wait until the user enters their name & presses "เข้าสู่ Lobby" (#btn-join-sync)!

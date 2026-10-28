@@ -19,6 +19,13 @@ export function getInjectedLanIp(): string | undefined {
   }
 }
 
+const FALLBACK_LOCATION: LocationLike = {
+  protocol: 'http:',
+  hostname: 'localhost',
+  port: '5173',
+  pathname: '/',
+};
+
 /**
  * Resolves the URL that mobile players should open when scanning the TV Arena QR code.
  * If the TV browser was opened via `localhost` or `127.0.0.1`, substitutes `fallbackLanIp`
@@ -27,7 +34,7 @@ export function getInjectedLanIp(): string | undefined {
  * so mobile scanners automatically join that TV's channel.
  */
 export function resolveMobileJoinUrl(
-  loc: LocationLike = window.location,
+  loc: LocationLike = typeof window !== 'undefined' && window.location ? window.location : FALLBACK_LOCATION,
   fallbackLanIp: string | undefined = getInjectedLanIp(),
   channel?: string | number | null,
 ): string {

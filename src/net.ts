@@ -764,7 +764,7 @@ export class NetClient {
   }
 
   private postHttpMessage(msg: NetMessage) {
-    if (typeof fetch === 'undefined') return;
+    if (typeof window === 'undefined' || typeof fetch === 'undefined') return;
     const targetCh = sanitizeChannelId(msg.channel ?? this.channel);
     fetch(this.resolveHttpSyncUrl(targetCh), {
       method: 'POST',
@@ -787,7 +787,7 @@ export class NetClient {
 
   private pollHttpSnapshot() {
     const wsActive = this.wsConnected && Date.now() - this.lastWsMessageAt < 1200;
-    if (typeof fetch === 'undefined' || this.httpPollInFlight || wsActive) return;
+    if (typeof window === 'undefined' || typeof fetch === 'undefined' || this.httpPollInFlight || wsActive) return;
     this.httpPollInFlight = true;
     const pollCh = this.channel;
     fetch(this.resolveHttpSyncUrl(pollCh), { cache: 'no-store' })

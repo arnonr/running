@@ -5,7 +5,8 @@ import {
 import type { CenterId } from './sim/types';
 import {
   AVATAR_COLORS, ROLE_LABELS, sanitizeNickname,
-  type PlayerProfile, type PlayerRole, type RoomSnapshot, type HostCommand,
+  CHANNEL_LIST, sanitizeChannelId,
+  type PlayerProfile, type PlayerRole, type RoomSnapshot, type HostCommand, type ChannelId,
 } from './net';
 import {
   AVATARS, AVATAR_LIST, sanitizeAvatarId, type AvatarId,
@@ -53,6 +54,7 @@ export interface UIHandlers {
   joinQueue(profile: PlayerProfile): void;
   playSoloNow(profile: PlayerProfile): void;
   selectAvatar?(avatarId: AvatarId, profile: PlayerProfile): void;
+  selectChannel?(ch: ChannelId): void;
   profileChange?(profile: PlayerProfile): void;
   editProfile?(): void;
   controlAction?(action: 'left' | 'right' | 'up' | 'down'): void;
@@ -82,6 +84,7 @@ export class UI {
   private profile: PlayerProfile;
   private tvMode = false;
   private lobbyReady = false;
+  private channel: ChannelId = '1';
 
   constructor(
     root: HTMLElement,
@@ -89,13 +92,16 @@ export class UI {
     muted: boolean,
     initialProfile: PlayerProfile,
     tvMode = false,
+    initialChannel: ChannelId = '1',
   ) {
     this.root = root;
     this.profile = { ...initialProfile, avatar: sanitizeAvatarId(initialProfile.avatar) };
     this.tvMode = tvMode;
+    this.channel = sanitizeChannelId(initialChannel);
     this.renderDOM();
     this.setMuted(muted);
     this.setTvMode(tvMode);
+    this.setChannel(this.channel);
   }
 
   private renderDOM() {
@@ -128,6 +134,11 @@ export class UI {
           <b class="av-name">${av.nameTh}</b>
           <small class="av-sub">${av.genderLabelTh} · ${av.roleBadgeTh}</small>
         </button>`,
+    ).join('');
+
+    const channelsHtml = CHANNEL_LIST.map(
+      (ch) =>
+        `<button type="button" class="ch-btn ${this.channel === ch ? 'on' : ''}" data-ch="${ch}">📡 CH ${ch}</button>`,
     ).join('');
 
     this.root.innerHTML = `
@@ -213,6 +224,11 @@ export class UI {
         <div class="panel">
           <h1>${GAME_TITLE.en}</h1>
           <p class="sub-th">${GAME_TITLE.th}</p>
+
+          <div class="form-row">
+            <label>📡 ช่องสัญญาณบูธ (เลือกให้ตรงกับจอทีวีจุดของคุณ)</label>
+            <div class="ch-grid" id="mobile-ch-grid">${channelsHtml}</div>
+          </div>
 
           <div class="form-row">
             <label for="inp-name">1. กรอกชื่อตัวละครของคุณ (แสดงบนตัวละครและจอทีวี)</label>
@@ -304,6 +320,7 @@ export class UI {
             <p>${GAME_TITLE.th} · ลู่วิ่งรวมถ่ายทอดสด (Synchronized Shared Track)</p>
           </div>
           <div class="tv-clock">
+            <span class="tv-ch-badge" id="tv-ch-badge">📡 CH ${this.channel}</span>
             <span class="tv-phase" id="tv-phase">รอบที่ #1 · LOBBY</span>
             <span class="tv-timer" id="tv-timer">00:45</span>
           </div>
@@ -315,13 +332,14 @@ export class UI {
               <div class="tv-qr-svg" id="tv-qr-svg">${this.buildQrSvg()}</div>
               <div class="tv-qr-info">
                 <h4>📱 สแกน QR เข้าร่วมวิ่ง!</h4>
-                <p id="tv-join-url">สแกนด้วยกล้องมือถือ (Wi-Fi เดียวกัน): <b style="color:#38bdf8;word-break:break-all">${resolveMobileJoinUrl()}</b></p>
+                <p id="tv-join-url">สแกนเข้า <b style="color:#facc15">CH ${this.channel}</b> ด้วยกล้องมือถือ: <b style="color:#38bdf8;word-break:break-all">${resolveMobileJoinUrl(undefined, undefined, this.channel)}</b></p>
               </div>
             </div>
 
             <div class="tv-host-card">
               <h4>🎛️ แผงควบคุมพิธีกรประจำบูธ (Admin Controls)</h4>
               <div class="tv-host-btns">
+                <div class="ch-grid" id="tv-ch-grid" style="grid-column:span 2;margin-bottom:2px">${channelsHtml}</div>
                 <button class="tv-btn primary" id="tv-btn-start">🚀 เริ่มปล่อยตัวรอบนี้ / เริ่มใหม่ (Admin Start)</button>
                 <button class="tv-btn danger" id="tv-btn-stop" style="grid-column:span 2;background:rgba(225,29,72,.28);border-color:#fb7185;color:#fecdd3">🛑 หยุดรอบกลางคัน / รีเซ็ตกลับล็อบบี้ (Stop & Reset)</button>
                 <div style="grid-column:span 2;display:grid;grid-template-columns:1fr 1fr 1.15fr;gap:6px">
@@ -419,6 +437,15 @@ export class UI {
       });
     });
 
+    this.root.querySelectorAll<HTMLButtonElement>('[data-ch]').forEach((btn) => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const nextCh = sanitizeChannelId(btn.dataset.ch);
+        this.setChannel(nextCh);
+        this.handlers.selectChannel?.(nextCh);
+      });
+    });
+
     this.el['mobile-pad']?.querySelectorAll<HTMLButtonElement>('[data-act]').forEach((btn) => {
       btn.addEventListener('pointerdown', (ev) => {
         ev.preventDefault();
@@ -496,7 +523,31 @@ export class UI {
   }
 
   private buildQrSvg(): string {
-    return buildJoinQrSvg(resolveMobileJoinUrl());
+    return buildJoinQrSvg(resolveMobileJoinUrl(undefined, undefined, this.channel));
+  }
+
+  getChannel(): ChannelId {
+    return this.channel;
+  }
+
+  setChannel(ch: ChannelId) {
+    this.channel = sanitizeChannelId(ch);
+    this.root.querySelectorAll<HTMLButtonElement>('[data-ch]').forEach((btn) => {
+      btn.classList.toggle('on', btn.dataset.ch === this.channel);
+    });
+    if (this.el['tv-ch-badge']) {
+      this.el['tv-ch-badge'].textContent = `📡 CH ${this.channel}`;
+    }
+    const joinUrl = resolveMobileJoinUrl(undefined, undefined, this.channel);
+    if (this.el['tv-qr-svg']) {
+      this.el['tv-qr-svg'].innerHTML = buildJoinQrSvg(joinUrl);
+    }
+    if (this.el['tv-join-url']) {
+      this.el['tv-join-url'].innerHTML = `สแกนเข้า <b style="color:#facc15">CH ${this.channel}</b> ด้วยกล้องมือถือ: <b style="color:#38bdf8;word-break:break-all">${joinUrl}</b>`;
+    }
+    if (this.el['btn-join-sync']) {
+      this.el['btn-join-sync'].textContent = `🚀 เข้าสู่ Lobby (CH ${this.channel}) · ส่งข้อมูลขึ้นจอทีวี`;
+    }
   }
 
   setTvMode(tv: boolean) {
@@ -565,10 +616,10 @@ export class UI {
   updateRoomSnapshot(snap: RoomSnapshot, localPlayerId: string) {
     const isQueued = snap.waitingQueue.some((p) => p.id === localPlayerId);
     const phaseLabel: Record<RoomSnapshot['phase'], string> = {
-      LOBBY: '🟢 ห้องรอปล่อยตัว (รอ Admin กดเริ่มบนทีวี)',
-      COUNTDOWN: '🟡 กำลังนับถอยหลังปล่อยตัว!',
-      RUNNING: '🔴 รอบปัจจุบันกำลังวิ่งแข่งขันอยู่!',
-      PODIUM: '🏆 สรุปผลผู้ชนะประจำรอบ (PODIUM)',
+      LOBBY: `🟢 ห้องรอปล่อยตัว CH ${this.channel} (รอ Admin กดเริ่มบนทีวี)`,
+      COUNTDOWN: `🟡 CH ${this.channel} · กำลังนับถอยหลังปล่อยตัว!`,
+      RUNNING: `🔴 CH ${this.channel} · รอบปัจจุบันกำลังวิ่งแข่งขันอยู่!`,
+      PODIUM: `🏆 CH ${this.channel} · สรุปผลผู้ชนะประจำรอบ (PODIUM)`,
     };
     if (this.el['ls-phase']) this.el['ls-phase'].textContent = phaseLabel[snap.phase];
     if (this.el['ls-timer']) {
