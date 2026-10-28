@@ -396,7 +396,7 @@ export class MatchRoomCore {
         } else {
           r.y = Math.sin(elapsed * 3 + idx) > 0.85 ? 1.5 : 0;
           r.sliding = r.y === 0 && Math.sin(elapsed * 2.1 + idx * 1.9) > 0.9;
-          r.stumbling = !r.activeCenter && Math.sin(elapsed * 1.1 + idx * 2.7) > 0.95;
+          r.stumbling = false;
         }
       }
 

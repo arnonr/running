@@ -500,11 +500,7 @@ export class Sim {
       this.peakY = Math.max(this.peakY, this.y);
     }
 
-    for (const o of this.obs) {
-      o.pd0 = o.d0;
-      o.pd1 = o.d1;
-      if (o.kind === 'mtrain') this.placeMover(o);
-    }
+    this.updateMovers();
 
     if (this.activeCenter !== 1) {
       this.groundY = this.supportAt(this.x, this.d, this.grounded ? this.y : Math.max(this.y, prevY));
@@ -544,6 +540,14 @@ export class Sim {
     }
   }
 
+  updateMovers() {
+    for (const o of this.obs) {
+      o.pd0 = o.d0;
+      o.pd1 = o.d1;
+      if (o.kind === 'mtrain') this.placeMover(o);
+    }
+  }
+
   supportAt(x: number, d: number, feet: number) {
     let g = 0;
     for (const o of this.obs) {
@@ -554,6 +558,64 @@ export class Sim {
       if (feet >= top - PLAYER.stepUp && top > g) g = top;
     }
     return g;
+  }
+
+  /**
+   * Computes the walkable support elevation (`ramp` slope `0 -> 2.65m` and `train` roof `2.65m`)
+   * for a 3D ghost runner rendered on the TV Live Arena track at `(lane, x, d)`.
+   */
+  ghostSupportAt(lane: number, x: number, d: number, prevSupportY: number, sameLane = true): number {
+    let g = 0;
+    for (const o of this.obs) {
+      if (!o.walk) continue;
+      if (o.lane !== lane && Math.abs(x - laneX(o.lane)) > o.halfW + PLAYER.halfW - 0.2) continue;
+      if (o.kind === 'ramp') {
+        if (d + PLAYER.halfD >= o.d0 && d - PLAYER.halfD <= o.d1) {
+          const top = this.topAt(o, Math.max(o.d0, Math.min(o.d1, d)));
+          if (top > g) g = top;
+        }
+      } else if (d + PLAYER.halfD * 0.5 >= o.d0 && d - PLAYER.halfD * 0.5 <= o.d1) {
+        const hasLeadingRamp = this.obs.some(
+          (r) => r.kind === 'ramp' && r.lane === o.lane && Math.abs(r.d1 - o.d0) < 1.5,
+        );
+        if (
+          prevSupportY >= o.yt - 1.15 ||
+          (hasLeadingRamp && (prevSupportY >= 0.2 || d <= o.d0 + 4.0 || sameLane))
+        ) {
+          if (o.yt > g) g = o.yt;
+        }
+      }
+    }
+    return g;
+  }
+
+  /**
+   * Checks whether a 3D ghost runner on the TV Live Arena track at `(lane, x, y, d)` is colliding
+   * with a non-walkable obstacle (`low`, `hurdle`, `overhead`, or a `train`/`mtrain` when not on its roof).
+   */
+  ghostObstacleHitAt(
+    lane: number,
+    x: number,
+    y: number,
+    d: number,
+    sliding: boolean,
+    activeCenter: CenterId | null,
+    supportY = 0,
+  ): Ob | null {
+    if (activeCenter === 1 || activeCenter === 9) return null;
+    const effectiveY = Math.max(y, supportY);
+    const h = sliding ? PLAYER.slideHeight : PLAYER.height;
+    for (const o of this.obs) {
+      if (o.kind === 'ramp') continue;
+      if (d + PLAYER.halfD <= o.d0 || d - PLAYER.halfD >= o.d1) continue;
+      if (o.lane !== lane && Math.abs(x - laneX(o.lane)) >= o.halfW + PLAYER.halfW - 0.1) continue;
+      const top = this.topAt(o, d);
+      if (o.walk && effectiveY >= top - PLAYER.stepUp * 1.6) continue;
+      const feet = effectiveY + PLAYER.feetTol;
+      const head = effectiveY + h - PLAYER.headTol;
+      if (head > o.yb && feet < top) return o;
+    }
+    return null;
   }
 
   topAt(o: Ob, d: number) {

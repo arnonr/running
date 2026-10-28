@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { stepTvClock } from '../src/config';
+import { stepTvClock, OB, trainLength, laneX } from '../src/config';
 import { nameBadgeTexture, NAME_BADGE_CACHE_LIMIT } from '../src/view/textures';
 import { createCenterAttachments, updateCenterAttachments } from '../src/view/player';
 import { MatchRoomCore } from '../src/net';
+import { Sim } from '../src/sim/sim';
 
 describe('TV Mode 60 FPS Smooth Clock & Badge Cache', () => {
   it('advances elapsed time and distance smoothly across 60 FPS frames even while 10Hz snapshot phaseTimeLeft is unchanged', () => {
@@ -64,5 +65,59 @@ describe('TV Mode 60 FPS Smooth Clock & Badge Cache', () => {
     expect(r?.y).toBeCloseTo(4.2, 1);
     expect(r?.sliding).toBe(true);
     expect(r?.stumbling).toBe(true);
+  });
+
+  it('lifts TV ghost runners smoothly up ramps and along walkable train roofs (never running through ramps)', () => {
+    const sim = new Sim(202610);
+    sim.noSpawn = true;
+    sim.reset(202610, false, 180);
+    // Place a ramp at d = 100..107 in lane 1, followed by a 2-car train at d = 107..(107 + trainLength(2))
+    const rampEnd = 100 + OB.ramp.depth;
+    const trainEnd = rampEnd + trainLength(2);
+    sim.addOb({ kind: 'ramp', lane: 1, d0: 100, d1: rampEnd });
+    sim.addOb({ kind: 'train', lane: 1, d0: rampEnd, d1: trainEnd, cars: 2 });
+
+    let supportY = 0;
+    // Before ramp
+    supportY = sim.ghostSupportAt(1, laneX(1), 98, supportY, true);
+    expect(supportY).toBe(0);
+
+    // Mid-ramp: climbs halfway up toward train roof height (2.65m)
+    supportY = sim.ghostSupportAt(1, laneX(1), 100 + OB.ramp.depth * 0.5, supportY, true);
+    expect(supportY).toBeGreaterThan(1.0);
+    expect(supportY).toBeLessThan(OB.train.yt);
+
+    // Top of ramp & along the train roof: stays at 2.65m without clipping through the train
+    supportY = sim.ghostSupportAt(1, laneX(1), rampEnd + 2, supportY, true);
+    expect(supportY).toBeCloseTo(OB.train.yt, 2);
+    supportY = sim.ghostSupportAt(1, laneX(1), trainEnd - 2, supportY, true);
+    expect(supportY).toBeCloseTo(OB.train.yt, 2);
+
+    // No obstacle collision while running on top of the ramp or train roof
+    expect(sim.ghostObstacleHitAt(1, laneX(1), supportY, rampEnd + 2, false, null, supportY)).toBeNull();
+
+    // Past the end of the train: support drops back to 0m
+    supportY = sim.ghostSupportAt(1, laneX(1), trainEnd + 2, supportY, true);
+    expect(supportY).toBe(0);
+  });
+
+  it('detects TV ghost obstacle collisions for blinking/stumble effects and respects jump/slide/flying', () => {
+    const sim = new Sim(202610);
+    sim.noSpawn = true;
+    sim.reset(202610, false, 180);
+    const lowOb = sim.addOb({ kind: 'low', lane: 0, d0: 80, d1: 80 + OB.low.depth });
+    const overOb = sim.addOb({ kind: 'overhead', lane: 2, d0: 120, d1: 120 + OB.overhead.depth });
+
+    // Running into low barrier at y = 0 triggers hit (which drives 16 Hz blink & runlookback on TV)
+    expect(sim.ghostObstacleHitAt(0, laneX(0), 0, 80.2, false, null, 0)?.id).toBe(lowOb.id);
+    // Jumping over low barrier (y = 1.2) clears it cleanly
+    expect(sim.ghostObstacleHitAt(0, laneX(0), 1.2, 80.2, false, null, 0)).toBeNull();
+
+    // Running upright into overhead barrier triggers hit
+    expect(sim.ghostObstacleHitAt(2, laneX(2), 0, 120.2, false, null, 0)?.id).toBe(overOb.id);
+    // Sliding/rolling under overhead barrier clears it cleanly
+    expect(sim.ghostObstacleHitAt(2, laneX(2), 0, 120.2, true, null, 0)).toBeNull();
+    // Flying with Center #1 or #9 is immune
+    expect(sim.ghostObstacleHitAt(0, laneX(0), 0, 80.2, false, 1, 0)).toBeNull();
   });
 });

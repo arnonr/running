@@ -14,7 +14,7 @@ import {
 } from './textures';
 import {
   LANE_W, laneX, CAR_LEN, CAR_GAP, VIEW_AHEAD, OB, CENTERS, CENTER_LIST,
-  STAGE_CENTER_ORDER, stageGateDistances,
+  STAGE_CENTER_ORDER, stageGateDistances, GRAVITY,
 } from '../config';
 import type { Sim } from '../sim/sim';
 import type { SimEvent, CenterId, Ob } from '../sim/types';
@@ -48,6 +48,8 @@ const GROUND_LEN = 300;
 const SIDEWALK_IN = 4.2;
 const SIDEWALK_OUT = 8.2;
 
+export const TV_ANCHOR_Z = -6.8;
+
 export const SCENERY_POOL_LIMITS = {
   staticPerCenter: 42,
   kineticPerCenter: 28,
@@ -61,9 +63,19 @@ interface GhostSlot {
   charClone: THREE.Object3D;
   avatar: AvatarId;
   mixer: THREE.AnimationMixer;
+  actions: Record<string, THREE.AnimationAction>;
+  currentClip: string | null;
   attachments: Record<CenterId, THREE.Group>;
   activeCenter: CenterId | null;
   wasStumbling: boolean;
+  blinkTimer: number;
+  stumbleAnimTimer: number;
+  lastHitObId: number;
+  supportY: number;
+  vy: number;
+  prevLane: number;
+  lean: number;
+  squash: number;
   ring: THREE.Mesh;
   badge: THREE.Sprite;
   badgeKey: string;
@@ -1140,7 +1152,6 @@ export class World {
   private buildGhostPackPool(core: GLTF, scene: THREE.Scene) {
     const ringGeo = new THREE.RingGeometry(0.38, 0.56, 24);
     ringGeo.rotateX(-Math.PI / 2);
-    const runClip = core.animations.find((c) => c.name === 'run') || core.animations[0];
 
     for (let i = 0; i < 10; i++) {
       const group = new THREE.Group();
@@ -1150,10 +1161,18 @@ export class World {
       charClone.rotation.set(0, Math.PI, 0);
       charClone.scale.set(0.92, 0.92, 0.92);
       const mixer = new THREE.AnimationMixer(charClone);
-      if (runClip) {
-        const act = mixer.clipAction(runClip);
-        act.timeScale = 1.15;
-        act.play();
+      const actions: Record<string, THREE.AnimationAction> = {};
+      for (const clip of core.animations) {
+        const a = mixer.clipAction(clip);
+        if (['jump', 'jumpup', 'roll', 'die', 'runlookback'].includes(clip.name)) {
+          a.setLoop(THREE.LoopOnce, 1);
+          a.clampWhenFinished = true;
+        }
+        actions[clip.name] = a;
+      }
+      if (actions.run) {
+        actions.run.timeScale = 1.15;
+        actions.run.play();
         mixer.update(i * 0.23);
       }
 
@@ -1179,9 +1198,19 @@ export class World {
         charClone,
         avatar: 'non',
         mixer,
+        actions,
+        currentClip: 'run',
         attachments,
         activeCenter: null,
         wasStumbling: false,
+        blinkTimer: 0,
+        stumbleAnimTimer: 0,
+        lastHitObId: -1,
+        supportY: 0,
+        vy: 0,
+        prevLane: 1,
+        lean: 0,
+        squash: 0,
         ring,
         badge,
         badgeKey: '',
@@ -1190,6 +1219,17 @@ export class World {
         z: -4 - i * 3,
       });
     }
+  }
+
+  private playGhostClip(slot: GhostSlot, name: string, fade = 0.1, timeScale = 1.0) {
+    const next = slot.actions[name];
+    if (!next) return;
+    next.timeScale = timeScale;
+    if (slot.currentClip === name && next.isRunning()) return;
+    next.reset().setEffectiveWeight(1).fadeIn(fade).play();
+    const prev = slot.currentClip ? slot.actions[slot.currentClip] : null;
+    if (prev && prev !== next) prev.fadeOut(fade);
+    slot.currentClip = name;
   }
 
   private buildGround() {
@@ -1298,7 +1338,8 @@ export class World {
   sync(sim: Sim, dt: number, menu: boolean, ghosts: RunnerNetState[] = [], localPlayerId = '', tvMode = false) {
     this.time += dt;
     const pd = sim.d;
-    const zOf = (d: number) => -(d - pd);
+    const anchorZ = tvMode ? TV_ANCHOR_Z : 0;
+    const zOf = (d: number) => anchorZ - (d - pd);
 
     // 9-Center Open-Horizon Biome Atmosphere!
     const biome = lerpCenterBiome(menu ? 0 : sim.progress01);
@@ -1415,7 +1456,7 @@ export class World {
 
     // 9-Center Open-Horizon Scenery: Portal Gates, Animated 3D Center Landmarks, Overhead Sky Elements & Billboards!
     this.syncNineCenterScenery(sim, pd, zOf);
-    this.syncGhostPack(dt, menu && !tvMode, ghosts, localPlayerId, tvMode, sim.speed > 0.1);
+    this.syncGhostPack(sim, dt, menu && !tvMode, ghosts, localPlayerId, tvMode, sim.speed > 0.1);
 
     this.player.root.visible = !tvMode;
     if (menu && !tvMode) this.player.menu(dt);
@@ -1581,6 +1622,7 @@ export class World {
   }
 
   private syncGhostPack(
+    sim: Sim,
     dt: number,
     menu: boolean,
     ghosts: RunnerNetState[],
@@ -1619,10 +1661,24 @@ export class World {
         freeSlot.runnerId = g.id;
         freeSlot.x = g.x ?? laneX(g.lane);
         freeSlot.y = g.y ?? 0;
-        freeSlot.z = -g.packOffsetZ - 2;
+        freeSlot.z = tvMode ? TV_ANCHOR_Z : -g.packOffsetZ - 2;
+        freeSlot.supportY = 0;
+        freeSlot.vy = 0;
+        freeSlot.prevLane = g.lane;
+        freeSlot.blinkTimer = 0;
+        freeSlot.stumbleAnimTimer = 0;
+        freeSlot.lastHitObId = -1;
+        freeSlot.lean = 0;
+        freeSlot.squash = 0;
+        freeSlot.charClone.visible = true;
         assigned.add(g.id);
       }
     }
+
+    const anchorRunner = others.find((r) => !r.isBot) || others[0];
+    const anchorRank = anchorRunner ? anchorRunner.rank : 1;
+    const anchorZ = tvMode ? TV_ANCHOR_Z : 0;
+    const laneCounts = [0, 0, 0];
 
     for (let i = 0; i < this.ghostSlots.length; i++) {
       const slot = this.ghostSlots[i];
@@ -1637,15 +1693,6 @@ export class World {
         slot.avatar = gAvatar;
         applyAvatarToCharacter(slot.charClone, gAvatar);
       }
-      slot.mixer.update(dt * (isRunning ? 1.0 : 0.65));
-      updateAvatarMotion(slot.charClone, this.time + i * 0.37, true);
-
-      // Crouch/tuck cleanly during slide without breaking root bone orientation
-      if (isRunning && g.sliding) {
-        slot.charClone.scale.set(0.96, 0.56, 0.96);
-      } else {
-        slot.charClone.scale.set(0.92, 0.92, 0.92);
-      }
 
       let targetX: number;
       let targetZ: number;
@@ -1656,19 +1703,75 @@ export class World {
         const hasCustomLane = !g.isBot && (g.lane !== 1 || Math.abs(g.x) > 0.05);
         targetX = hasCustomLane ? laneX(g.lane) + gridCol * 0.25 : gridCol * 2.15;
         targetZ = -1.2 - gridRow * 2.4;
+        slot.supportY = 0;
+        slot.vy = 0;
+        slot.blinkTimer = 0;
+        slot.stumbleAnimTimer = 0;
+        slot.lastHitObId = -1;
+        slot.prevLane = g.lane;
       } else {
-        const spreadX = ((i % 3) - 1) * 0.32;
-        const rankZ = -7.8 + (g.rank - 1) * 1.65;
-        targetX = laneX(g.lane) + spreadX;
-        targetZ = Math.max(-11.0, Math.min(-1.0, rankZ - g.packOffsetZ * 0.35));
+        const laneIdx = Math.max(0, Math.min(2, g.lane));
+        const sameLaneCount = laneCounts[laneIdx];
+        laneCounts[laneIdx]++;
+        const spreadX = sameLaneCount === 0 ? 0 : (sameLaneCount % 2 === 1 ? 1 : -1) * 0.26;
+        const baseX =
+          !g.isBot && Math.abs((g.x ?? laneX(g.lane)) - laneX(g.lane)) > 0.02 ? g.x : laneX(g.lane);
+        targetX = baseX + spreadX;
+        const rankZ = TV_ANCHOR_Z + (g.rank - anchorRank) * 1.45;
+        const packShift = g.id === anchorRunner?.id ? 0 : g.packOffsetZ * 0.25;
+        targetZ = Math.max(-11.0, Math.min(-1.2, rankZ - packShift));
       }
-      const targetY = g.activeCenter === 1 ? Math.max(g.y ?? 0, 3.2 + Math.sin(this.time * 4 + i) * 0.2) : (g.y ?? 0);
+
       const kx = Math.min(1, dt * 18);
-      const ky = Math.min(1, dt * 18);
-      const kz = Math.min(1, dt * 9);
+      const kz = Math.min(1, dt * 10);
       slot.x += (targetX - slot.x) * kx;
-      slot.y += (targetY - slot.y) * ky;
       slot.z += (targetZ - slot.z) * kz;
+
+      // Track distance at this ghost's rendered Z position (`zOf(d) = anchorZ - (d - sim.d)`)
+      const slotD = sim.d + (anchorZ - slot.z);
+
+      let targetY: number;
+      const prevY = slot.y;
+      const wasAboveSupport = slot.y > slot.supportY + 0.18;
+      if (!isRunning) {
+        targetY = g.y ?? 0;
+      } else {
+        const sameLane = slot.prevLane === g.lane;
+        const rawSupportY =
+          g.activeCenter === 1
+            ? 0
+            : sim.ghostSupportAt(g.lane, laneX(g.lane), slotD, slot.supportY, sameLane);
+        slot.prevLane = g.lane;
+        if (rawSupportY >= slot.supportY) {
+          slot.supportY = rawSupportY;
+          slot.vy = 0;
+        } else {
+          slot.vy -= GRAVITY * dt;
+          slot.supportY = Math.max(rawSupportY, slot.supportY + slot.vy * dt);
+          if (slot.supportY <= rawSupportY) {
+            slot.supportY = rawSupportY;
+            slot.vy = 0;
+          }
+        }
+
+        if (g.activeCenter === 1) {
+          targetY = Math.max(g.y ?? 0, 3.6 + Math.sin(this.time * 4 + i) * 0.2);
+        } else if (!g.isBot) {
+          targetY = Math.max(slot.supportY, g.y ?? 0);
+        } else {
+          targetY = slot.supportY > 0.05 ? slot.supportY : (g.y ?? 0);
+        }
+      }
+      const ky = Math.min(1, dt * 22);
+      slot.y += (targetY - slot.y) * ky;
+      const vyApprox = dt > 1e-4 ? (slot.y - prevY) / dt : 0;
+      if (isRunning && wasAboveSupport && slot.y <= slot.supportY + 0.08 && g.activeCenter !== 1) {
+        slot.squash = 0.16;
+        this.fx.burst(slot.x, slot.y + 0.1, slot.z + 0.2, 6, 0x38bdf8, {
+          speed: 2.0, up: 0.6, size: 0.45, life: 0.35, grav: 1,
+        });
+      }
+      slot.squash = Math.max(0, slot.squash - dt * 1.4);
       slot.group.position.set(slot.x, slot.y, slot.z);
 
       // Update 3D 9-Center power-up attachments & particle bursts on TV
@@ -1679,6 +1782,7 @@ export class World {
           this.fx.burst(slot.x, slot.y + 1.0, slot.z, 22, pCol, {
             speed: 4.6, up: 3.6, size: 0.55, life: 0.55,
           });
+          if (!g.isBot) this.flash = 0.25;
         }
         slot.activeCenter = g.activeCenter;
       }
@@ -1694,15 +1798,93 @@ export class World {
         );
       }
 
-      // Stumble / obstacle hit spark burst & shake on TV
-      const isStumbling = !!g.stumbling;
-      if (isStumbling && !slot.wasStumbling) {
-        this.fx.burst(slot.x, slot.y + 0.9, slot.z, 20, 0xff4422, {
+      // Obstacle collision detection + Stumble animation + 16 Hz Invulnerability Blink on TV
+      const hitOb = isRunning
+        ? sim.ghostObstacleHitAt(g.lane, slot.x, slot.y, slotD, !!g.sliding, g.activeCenter, slot.supportY)
+        : null;
+      const isNetStumbling = isRunning && !!g.stumbling;
+      let triggeredHit = false;
+
+      if (hitOb && slot.lastHitObId !== hitOb.id) {
+        slot.lastHitObId = hitOb.id;
+        if (g.activeCenter === 3) {
+          this.shake = Math.max(this.shake, 0.25);
+          this.fx.burst(slot.x, slot.y + 1.0, slot.z, 24, 0xfacc15, {
+            speed: 6.0, up: 2.4, size: 0.55, life: 0.5, grav: 4,
+          });
+        } else if (g.activeCenter === 4) {
+          this.shake = Math.max(this.shake, 0.2);
+          slot.blinkTimer = Math.max(slot.blinkTimer, 0.8);
+          this.fx.burst(slot.x, slot.y + 1.0, slot.z, 20, 0x4ade80, {
+            speed: 4.5, up: 1.8, size: 0.5, life: 0.45, grav: 2,
+          });
+        } else if (slot.blinkTimer <= 0.2) {
+          triggeredHit = true;
+        }
+      }
+      if (isNetStumbling && !slot.wasStumbling) {
+        triggeredHit = true;
+      }
+      if (triggeredHit) {
+        slot.blinkTimer = 1.5;
+        slot.stumbleAnimTimer = 0.55;
+        this.playGhostClip(slot, 'runlookback', 0.06, 1.8);
+        this.shake = Math.max(this.shake, g.isBot ? 0.16 : 0.34);
+        this.fx.burst(slot.x, slot.y + 0.9, slot.z, 20, 0xfb7185, {
           speed: 5.0, up: 3.2, size: 0.52, life: 0.45,
         });
       }
-      slot.wasStumbling = isStumbling;
-      slot.charClone.rotation.set(0, Math.PI, isStumbling ? Math.sin(this.time * 30 + i) * 0.34 : 0);
+      if (isNetStumbling) {
+        slot.blinkTimer = Math.max(slot.blinkTimer, 0.45);
+      }
+      slot.wasStumbling = isNetStumbling;
+      slot.blinkTimer = Math.max(0, slot.blinkTimer - dt);
+      slot.stumbleAnimTimer = Math.max(0, slot.stumbleAnimTimer - dt);
+
+      // 16 Hz Invulnerability Blink on hit/stumble (matches PlayerView in mobile mode!)
+      if (isRunning && slot.blinkTimer > 0 && g.activeCenter === null) {
+        slot.charClone.visible = Math.floor(slot.blinkTimer * 16) % 2 === 0;
+      } else {
+        slot.charClone.visible = true;
+      }
+
+      // Animation state machine (idle, run, jump, fall, roll, jumpup, runlookback)
+      if (!isRunning) {
+        if ((g.y ?? 0) > 0.25) {
+          this.playGhostClip(slot, 'jump', 0.06, 1.1);
+        } else {
+          this.playGhostClip(slot, 'idle', 0.2, 1.0);
+        }
+      } else if (slot.stumbleAnimTimer > 0) {
+        this.playGhostClip(slot, 'runlookback', 0.08, 1.8);
+      } else if (g.activeCenter === 1) {
+        this.playGhostClip(slot, 'jumpup', 0.15, 0.5);
+      } else if (g.sliding) {
+        this.playGhostClip(slot, 'roll', 0.06, 1.35);
+      } else if (slot.y > slot.supportY + 0.25) {
+        if (vyApprox < -2.5 && slot.actions.fall) {
+          this.playGhostClip(slot, 'fall', 0.12, 1.0);
+        } else {
+          this.playGhostClip(slot, 'jump', 0.06, 1.05);
+        }
+      } else {
+        this.playGhostClip(slot, 'run', 0.1, 1.15);
+      }
+
+      slot.mixer.update(dt * (isRunning ? 1.0 : 0.85));
+      updateAvatarMotion(slot.charClone, this.time + i * 0.37, isRunning);
+
+      const sq = slot.squash;
+      if (isRunning && g.sliding && !slot.actions.roll) {
+        slot.charClone.scale.set(0.96, 0.56, 0.96);
+      } else {
+        slot.charClone.scale.set(0.92 * (1 + sq * 0.4), 0.92 * (1 - sq * 0.8), 0.92 * (1 + sq * 0.4));
+      }
+
+      const dxLean = Math.max(-1, Math.min(1, (targetX - slot.x) * 1.4));
+      slot.lean += (dxLean - slot.lean) * Math.min(1, dt * 14);
+      const stumbleRoll = slot.stumbleAnimTimer > 0 ? Math.sin(this.time * 30 + i) * 0.28 : -slot.lean * 0.18;
+      slot.charClone.rotation.set(0, Math.PI - slot.lean * 0.35, stumbleRoll);
 
       const col = g.activeCenter ? CENTERS[g.activeCenter].color : g.color;
       (slot.ring.material as THREE.MeshBasicMaterial).color.set(col);

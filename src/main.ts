@@ -301,7 +301,7 @@ async function main() {
       activeCenter: sim.activeCenter,
       collectedCount: sim.collectedCenters.size,
       sliding: sim.sliding,
-      stumbling: sim.stumbleSlow > 0.1 || sim.sinceStumble < 0.65,
+      stumbling: sim.stumbleSlow > 0.1 || sim.sinceStumble < 1.4,
     });
   }
 
@@ -471,11 +471,29 @@ async function main() {
         sim.floor = tv.floor;
         sim.stageIndex = tv.stageIndex;
         sim.stageCenter = tv.stageCenter;
-        sim.d = tv.d;
-        sim.speed = tv.speed;
+        const leadHuman = latestRoom.activeRunners.find((r) => !r.isBot);
+        if (leadHuman && leadHuman.d > 0) {
+          let speedMul = 1;
+          if (leadHuman.stumbling) speedMul = 0.7;
+          else if (leadHuman.activeCenter === 1 || leadHuman.activeCenter === 9) speedMul = 1.35;
+          else if (leadHuman.activeCenter === 3) speedMul = 1.2;
+          sim.speed = tv.speed * speedMul;
+          const nextD = sim.d + sim.speed * dt;
+          const diffD = leadHuman.d - nextD;
+          if (Math.abs(diffD) > 25 || sim.d <= 0) {
+            sim.d = leadHuman.d;
+          } else {
+            sim.d = Math.max(sim.d, nextD + diffD * Math.min(1, dt * 10));
+          }
+        } else {
+          sim.d = tv.d;
+          sim.speed = tv.speed;
+        }
+        sim.updateMovers();
         sim.track.ensure(sim.d + VIEW_AHEAD);
         sim.recycle();
       } else {
+        sim.d = 0;
         sim.speed = 0;
       }
       sim.drainEvents();
