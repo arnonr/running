@@ -243,38 +243,77 @@ export class PlayerView {
   }
 }
 
+let sharedAttachmentMats: {
+  aeroSkinMat: THREE.MeshPhongMaterial;
+  darkMetalMat: THREE.MeshPhongMaterial;
+  chromeMat: THREE.MeshPhongMaterial;
+  goldFoilMat: THREE.MeshPhongMaterial;
+  rocketSkinMat: THREE.MeshPhongMaterial;
+  solarSkinMat: THREE.MeshPhongMaterial;
+  serverSkinMat: THREE.MeshPhongMaterial;
+  bioSkinMat: THREE.MeshPhongMaterial;
+  basicCache: Map<string, THREE.MeshBasicMaterial>;
+} | null = null;
+
+function getSharedAttachmentMaterials() {
+  if (!sharedAttachmentMats) {
+    sharedAttachmentMats = {
+      aeroSkinMat: new THREE.MeshPhongMaterial({
+        map: architecturalTowerSkinTexture('#f8fafc', '#38bdf8', '#0284c7'),
+        shininess: 75,
+      }),
+      darkMetalMat: new THREE.MeshPhongMaterial({ color: 0x1e293b, shininess: 85 }),
+      chromeMat: new THREE.MeshPhongMaterial({ color: 0xe2e8f0, shininess: 100 }),
+      goldFoilMat: new THREE.MeshPhongMaterial({
+        color: 0xfacc15,
+        emissive: 0x854d0e,
+        emissiveIntensity: 0.35,
+        shininess: 110,
+      }),
+      rocketSkinMat: new THREE.MeshPhongMaterial({
+        map: rocketHullSkinTexture('#f472b6'),
+        shininess: 80,
+      }),
+      solarSkinMat: new THREE.MeshPhongMaterial({
+        map: solarArraySkinTexture(),
+        shininess: 95,
+      }),
+      serverSkinMat: new THREE.MeshPhongMaterial({
+        map: serverRackSkinTexture(),
+        shininess: 85,
+      }),
+      bioSkinMat: new THREE.MeshPhongMaterial({
+        map: bioreactorSkinTexture(),
+        shininess: 90,
+      }),
+      basicCache: new Map(),
+    };
+  }
+  return sharedAttachmentMats;
+}
+
 export function createCenterAttachments(): Record<CenterId, THREE.Group> {
   const attachments = {} as Record<CenterId, THREE.Group>;
-  const basicMat = (hex: string, opacity = 0.85, wireframe = false) =>
-    new THREE.MeshBasicMaterial({ color: hex, transparent: opacity < 1, opacity, wireframe });
-  const aeroSkinMat = new THREE.MeshPhongMaterial({
-    map: architecturalTowerSkinTexture('#f8fafc', '#38bdf8', '#0284c7'),
-    shininess: 75,
-  });
-  const darkMetalMat = new THREE.MeshPhongMaterial({ color: 0x1e293b, shininess: 85 });
-  const chromeMat = new THREE.MeshPhongMaterial({ color: 0xe2e8f0, shininess: 100 });
-  const goldFoilMat = new THREE.MeshPhongMaterial({
-    color: 0xfacc15,
-    emissive: 0x854d0e,
-    emissiveIntensity: 0.35,
-    shininess: 110,
-  });
-  const rocketSkinMat = new THREE.MeshPhongMaterial({
-    map: rocketHullSkinTexture('#f472b6'),
-    shininess: 80,
-  });
-  const solarSkinMat = new THREE.MeshPhongMaterial({
-    map: solarArraySkinTexture(),
-    shininess: 95,
-  });
-  const serverSkinMat = new THREE.MeshPhongMaterial({
-    map: serverRackSkinTexture(),
-    shininess: 85,
-  });
-  const bioSkinMat = new THREE.MeshPhongMaterial({
-    map: bioreactorSkinTexture(),
-    shininess: 90,
-  });
+  const mats = getSharedAttachmentMaterials();
+  const basicMat = (hex: string, opacity = 0.85, wireframe = false) => {
+    const key = `${hex}:${opacity}:${wireframe ? 1 : 0}`;
+    let m = mats.basicCache.get(key);
+    if (!m) {
+      m = new THREE.MeshBasicMaterial({ color: hex, transparent: opacity < 1, opacity, wireframe });
+      mats.basicCache.set(key, m);
+    }
+    return m;
+  };
+  const {
+    aeroSkinMat,
+    darkMetalMat,
+    chromeMat,
+    goldFoilMat,
+    rocketSkinMat,
+    solarSkinMat,
+    serverSkinMat,
+    bioSkinMat,
+  } = mats;
 
   // ==========================================================================
   // #1 อากาศยานและป้องกันประเทศ: Jet Fighter Pack (Swept Delta Wings + Twin Turbofans + Wingtip Missiles + Afterburners)
@@ -868,6 +907,25 @@ export function createCenterAttachments(): Record<CenterId, THREE.Group> {
   ];
   for (const [id, grp] of list) {
     grp.visible = false;
+    const animNodes: THREE.Object3D[] = [];
+    grp.traverse((o) => {
+      const ud = o.userData;
+      if (
+        ud &&
+        (ud.isAfterburner ||
+          ud.isRotor ||
+          ud.droneSide ||
+          ud.spinZ ||
+          ud.spinY ||
+          ud.orbitGroup ||
+          ud.magnetSide ||
+          ud.isFluxArc ||
+          ud.isMedDrone)
+      ) {
+        animNodes.push(o);
+      }
+    });
+    grp.userData.animNodes = animNodes;
     attachments[id] = grp;
   }
   return attachments;
@@ -889,9 +947,10 @@ export function updateCenterAttachments(
       grp.position.y = Math.sin(time * 18) * 0.022;
     }
 
-    grp.traverse((o) => {
+    const nodes = (grp.userData.animNodes as THREE.Object3D[] | undefined) ?? [];
+    for (let i = 0; i < nodes.length; i++) {
+      const o = nodes[i];
       const ud = o.userData;
-      if (!ud) return;
       if (ud.isAfterburner) {
         const flicker = 0.88 + Math.sin(time * 38) * 0.16;
         o.scale.set(1, flicker, 1);
@@ -917,6 +976,6 @@ export function updateCenterAttachments(
         o.position.y = 1.68 + Math.sin(time * 4.8) * 0.08;
         o.rotation.z = Math.cos(time * 3.5) * 0.08;
       }
-    });
+    }
   }
 }

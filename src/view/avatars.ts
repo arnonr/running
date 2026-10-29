@@ -330,6 +330,7 @@ function attachBoneCostumes(characterRoot: THREE.Object3D, avatarId: AvatarId) {
     if (o.userData?.isAvatarCostume) toRemove.push(o);
   });
   for (const o of toRemove) o.removeFromParent();
+  characterRoot.userData.motionNodes = [];
 
   if (avatarId === 'non') return;
 
@@ -642,6 +643,14 @@ function attachBoneCostumes(characterRoot: THREE.Object3D, avatarId: AvatarId) {
       spine2Bone.add(packGrp);
     }
   }
+
+  const motionNodes: THREE.Object3D[] = [];
+  characterRoot.traverse((o) => {
+    if (o.userData?.isPonytailPivot || o.userData?.isSkirtGroup) {
+      motionNodes.push(o);
+    }
+  });
+  characterRoot.userData.motionNodes = motionNodes;
 }
 
 /**
@@ -691,9 +700,21 @@ export function applyAvatarToCharacter(characterRoot: THREE.Object3D, rawAvatarI
  * during running and lobby warm-up.
  */
 export function updateAvatarMotion(characterRoot: THREE.Object3D, time: number, isRunning: boolean) {
+  let nodes = characterRoot.userData?.motionNodes as THREE.Object3D[] | undefined;
+  if (!nodes) {
+    nodes = [];
+    characterRoot.traverse((o) => {
+      if (o.userData?.isPonytailPivot || o.userData?.isSkirtGroup) {
+        nodes!.push(o);
+      }
+    });
+    characterRoot.userData.motionNodes = nodes;
+  }
+  if (nodes.length === 0) return;
   const freq = isRunning ? 11.5 : 3.2;
   const amp = isRunning ? 0.26 : 0.08;
-  characterRoot.traverse((o) => {
+  for (let i = 0; i < nodes.length; i++) {
+    const o = nodes[i];
     if (o.userData?.isPonytailPivot) {
       o.rotation.x = Math.sin(time * freq) * amp;
       o.rotation.z = Math.cos(time * (freq * 0.5)) * (amp * 0.65);
@@ -701,5 +722,5 @@ export function updateAvatarMotion(characterRoot: THREE.Object3D, time: number, 
       const flare = 1 + Math.abs(Math.sin(time * freq)) * (isRunning ? 0.08 : 0.02);
       o.scale.set(flare, 1, flare);
     }
-  });
+  }
 }

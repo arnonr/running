@@ -588,30 +588,32 @@ async function main() {
     }
     audio.rumble(rumble);
 
-    const myRunner = latestRoom.activeRunners.find((r) => r.id === savedProfile.id);
-    const myRank = myRunner ? myRunner.rank : 1;
-    const badgeColor = sim.activeCenter ? CENTERS[sim.activeCenter].color : savedProfile.color;
-    world.player.setProfileBadge(savedProfile.name, myRank, badgeColor);
-    const stageMeta = CENTERS[sim.stageCenter];
-    const isLobbyWaiting = state === 'start' && !isTvMode;
-    ui.hud({
-      score: Math.floor(sim.score),
-      coins: sim.coins,
-      mult: sim.mult,
-      floor: sim.floor,
-      zoneNameTh: isLobbyWaiting
-        ? '🟢 ประจำจุดปล่อยตัวแล้ว · รอ Admin กดเริ่มบนจอทีวี!'
-        : `${stageMeta.icon} ด่าน ${sim.stageIndex + 1}/9 · ${stageMeta.shortTh}`,
-      timeLeft: sim.timeLeft,
-      progress01: sim.progress01,
-      activeCenter: sim.activeCenter,
-      centerTimer: sim.centerTimer,
-      shieldHits: sim.shieldHits,
-      collectedCenters: sim.collectedCenters,
-      rank: myRank,
-      totalRunners: latestRoom.activeRunners.length || 1,
-      soloRun,
-    });
+    if (!isTvMode) {
+      const myRunner = latestRoom.activeRunners.find((r) => r.id === savedProfile.id);
+      const myRank = myRunner ? myRunner.rank : 1;
+      const badgeColor = sim.activeCenter ? CENTERS[sim.activeCenter].color : savedProfile.color;
+      world.player.setProfileBadge(savedProfile.name, myRank, badgeColor);
+      const stageMeta = CENTERS[sim.stageCenter];
+      const isLobbyWaiting = state === 'start';
+      ui.hud({
+        score: Math.floor(sim.score),
+        coins: sim.coins,
+        mult: sim.mult,
+        floor: sim.floor,
+        zoneNameTh: isLobbyWaiting
+          ? '🟢 ประจำจุดปล่อยตัวแล้ว · รอ Admin กดเริ่มบนจอทีวี!'
+          : `${stageMeta.icon} ด่าน ${sim.stageIndex + 1}/9 · ${stageMeta.shortTh}`,
+        timeLeft: sim.timeLeft,
+        progress01: sim.progress01,
+        activeCenter: sim.activeCenter,
+        centerTimer: sim.centerTimer,
+        shieldHits: sim.shieldHits,
+        collectedCenters: sim.collectedCenters,
+        rank: myRank,
+        totalRunners: latestRoom.activeRunners.length || 1,
+        soloRun,
+      });
+    }
 
     if (draw) renderer.render(world.scene, world.camera);
   }

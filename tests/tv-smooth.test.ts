@@ -165,4 +165,26 @@ describe('TV Mode 60 FPS Smooth Clock & Badge Cache', () => {
     const evOver = sim.botEvadeActionAt(2, 164, 0, 0, null);
     expect(evOver.slide).toBe(true);
   });
+
+  it('shares procedural materials/textures across createCenterAttachments instances and caches animated nodes', () => {
+    const a1 = createCenterAttachments();
+    const a2 = createCenterAttachments();
+
+    const findMappedMat = (grp: any) => {
+      let mat: any = null;
+      grp.traverse((o: any) => {
+        if (!mat && o.isMesh && o.material?.map) mat = o.material;
+      });
+      return mat;
+    };
+
+    const m1 = findMappedMat(a1[1]);
+    const m2 = findMappedMat(a2[1]);
+    expect(m1).toBeDefined();
+    expect(m1).toBe(m2);
+    expect(m1.map).toBe(m2.map);
+
+    expect(Array.isArray(a1[1].userData.animNodes)).toBe(true);
+    expect(a1[1].userData.animNodes.length).toBeGreaterThan(0);
+  });
 });
