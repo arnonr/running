@@ -14,5 +14,9 @@ describe('Smart Wayfinding Exhibition Directory Grouping', () => {
     const floor8 = groups.find((g) => g.floor === 8)!;
     expect(floor8.centers.map((c) => c.id)).toEqual([6, 7]);
     expect(floor8.centers.find((c) => c.id === 6)?.unlocked).toBe(true);
+
+    expect(floor1.centers.find((c) => c.id === 4)?.shortTh).toBe('สิ่งแวดล้อมและการอนุรักษ์พลังงาน');
+    expect(floor1.centers.find((c) => c.id === 5)?.shortTh).toBe('นวัตกรรมไร้สายล้ำหน้ายุค 5G');
+    expect(floor8.centers.find((c) => c.id === 7)?.shortTh).toBe('เทคโนโลยีชีวภาพและเคมีชีวภาพ');
   });
 });

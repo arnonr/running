@@ -87,4 +87,10 @@ describe('TechnoPark Config & RNG', () => {
     const b = new Rng(12345);
     expect([a.next(), a.int(0, 9), a.range(10, 20)]).toEqual([b.next(), b.int(0, 9), b.range(10, 20)]);
   });
+
+  it('uses exact official Thai display names for Centers #4, #5, and #7', () => {
+    expect(CENTERS[4].shortTh).toBe('สิ่งแวดล้อมและการอนุรักษ์พลังงาน');
+    expect(CENTERS[5].shortTh).toBe('นวัตกรรมไร้สายล้ำหน้ายุค 5G');
+    expect(CENTERS[7].shortTh).toBe('เทคโนโลยีชีวภาพและเคมีชีวภาพ');
+  });
 });

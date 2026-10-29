@@ -50,7 +50,7 @@ export const CENTER_BIOMES: Record<CenterId, CenterBiomePalette> = {
   // Stage 2 (20-40s, Floor 1): Clean Energy & Environment — Fresh Emerald-Mint Sunrise, Solar Valley
   4: {
     centerId: 4,
-    stageTitleTh: 'ด่าน 2/9 · 🌿 ศูนย์พลังงานสะอาด (ชั้น 1)',
+    stageTitleTh: 'ด่าน 2/9 · 🌿 สิ่งแวดล้อมและการอนุรักษ์พลังงาน (ชั้น 1)',
     skyTopHex: '#065f46',
     skyMidHex: '#10b981',
     skyHorizonHex: '#a7f3d0',
@@ -66,7 +66,7 @@ export const CENTER_BIOMES: Record<CenterId, CenterBiomePalette> = {
   // Stage 3 (40-60s, Floor 1): 5G Wireless Innovation — Electric Cyber Violet-Magenta Matrix
   5: {
     centerId: 5,
-    stageTitleTh: 'ด่าน 3/9 · 📡 ศูนย์นวัตกรรมไร้สาย 5G (ชั้น 1)',
+    stageTitleTh: 'ด่าน 3/9 · 📡 นวัตกรรมไร้สายล้ำหน้ายุค 5G (ชั้น 1)',
     skyTopHex: '#1e1b4b',
     skyMidHex: '#6d28d9',
     skyHorizonHex: '#d8b4fe',
@@ -130,7 +130,7 @@ export const CENTER_BIOMES: Record<CenterId, CenterBiomePalette> = {
   // Stage 7 (120-140s, Floor 8): Bio-Chem & Bio-Materials — Bioluminescent Lime-Emerald Helix Lab
   7: {
     centerId: 7,
-    stageTitleTh: 'ด่าน 7/9 · 🧬 ศูนย์เทคโนโลยีชีวภาพ (ชั้น 8)',
+    stageTitleTh: 'ด่าน 7/9 · 🧬 เทคโนโลยีชีวภาพและเคมีชีวภาพ (ชั้น 8)',
     skyTopHex: '#052e16',
     skyMidHex: '#15803d',
     skyHorizonHex: '#bef264',
@@ -200,7 +200,7 @@ export const ZONE_PALETTES: Record<ZoneId, ZonePalette> = {
   },
   3: {
     zoneId: 3,
-    nameTh: 'ชั้น 8: แล็บเรดาร์และเทคโนโลยีชีวภาพ (Radar & Bio-Chem)',
+    nameTh: 'ชั้น 8: แล็บเรดาร์และเทคโนโลยีชีวภาพและเคมีชีวภาพ (Radar & Bio-Chem)',
     skyTopHex: '#022c22',
     skyBottomHex: '#0d9488',
     fogHex: '#064e3b',
@@ -407,15 +407,16 @@ export function centerGateBannerTexture(centerId: CenterId, stageNumber: number)
   g.font = '900 24px system-ui, sans-serif';
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  g.fillText(`STAGE ${stageNumber} / 9 · ศูนย์วิจัยที่ #${meta.id} · ${meta.exhibitionFloorTh}`, W / 2, 46);
+  g.fillText(`STAGE ${stageNumber} / 9 · ศูนย์วิจัยที่ #${meta.id} · ${meta.exhibitionFloorTh}`, W / 2, 46, W - 64);
 
+  const gateNameSize = meta.shortTh.length > 24 ? 36 : 42;
   g.fillStyle = '#ffffff';
-  g.font = '900 42px system-ui, sans-serif';
-  g.fillText(`${meta.icon} ${meta.shortTh}`, W / 2, 106);
+  g.font = `900 ${gateNameSize}px system-ui, sans-serif`;
+  g.fillText(`${meta.icon} ${meta.shortTh}`, W / 2, 106, W - 64);
 
   g.fillStyle = meta.color;
   g.font = 'bold 24px system-ui, sans-serif';
-  g.fillText(`⚡ พลังประจำศูนย์: ${meta.powerName}`, W / 2, 154);
+  g.fillText(`⚡ พลังประจำศูนย์: ${meta.powerName}`, W / 2, 154, W - 64);
 
   return tex(c, false);
 }
@@ -480,22 +481,23 @@ export function centerBillboardTexture(centerId: CenterId) {
   g.font = '900 24px system-ui, sans-serif';
   g.textAlign = 'left';
   g.textBaseline = 'middle';
-  g.fillText(`SUTO TECHNOPARK · ศูนย์ที่ #${meta.id}`, 44, 51);
+  g.fillText(`SUTO TECHNOPARK · ศูนย์ที่ #${meta.id}`, 44, 51, W - 88);
 
   // Icon + Short Thai Name
+  const bbNameSize = meta.shortTh.length > 24 ? 30 : 36;
   g.fillStyle = '#ffffff';
-  g.font = '900 36px system-ui, sans-serif';
-  g.fillText(`${meta.icon} ${meta.shortTh}`, 32, 118);
+  g.font = `900 ${bbNameSize}px system-ui, sans-serif`;
+  g.fillText(`${meta.icon} ${meta.shortTh}`, 32, 118, W - 64);
 
   // Exhibition floor badge
   g.fillStyle = '#cbd5e1';
   g.font = 'bold 24px system-ui, sans-serif';
-  g.fillText(`📍 ${meta.exhibitionFloorTh}`, 34, 168);
+  g.fillText(`📍 ${meta.exhibitionFloorTh}`, 34, 168, W - 68);
 
   // Power-up name footer
   g.fillStyle = meta.color;
   g.font = 'bold 22px system-ui, sans-serif';
-  g.fillText(`⚡ พลังพิเศษ: ${meta.powerName}`, 34, 212);
+  g.fillText(`⚡ พลังพิเศษ: ${meta.powerName}`, 34, 212, W - 68);
 
   return tex(c, false);
 }
@@ -597,8 +599,8 @@ export function centerCapsuleTexture(centerId: CenterId) {
   round(g, 22, S - 52, S - 44, 30, 10);
   g.fill();
   g.fillStyle = '#f8fafc';
-  g.font = 'bold 14px system-ui, sans-serif';
-  g.fillText(meta.shortTh.slice(0, 14), S / 2, S - 37);
+  g.font = 'bold 13px system-ui, sans-serif';
+  g.fillText(meta.shortTh, S / 2, S - 37, S - 52);
 
   return tex(c, false);
 }

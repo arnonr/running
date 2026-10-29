@@ -190,7 +190,7 @@ export const CENTERS: Record<CenterId, CenterMeta> = {
   4: {
     id: 4,
     nameTh: 'ศูนย์ปฏิบัติการสิ่งแวดล้อมและการอนุรักษ์พลังงาน',
-    shortTh: 'สิ่งแวดล้อมและพลังงานสะอาด',
+    shortTh: 'สิ่งแวดล้อมและการอนุรักษ์พลังงาน',
     exhibitionFloorTh: 'จัดแสดงที่ ชั้น 1 (โถงนิทรรศการหลัก)',
     exhibitionFloorGroup: 1,
     powerName: 'Green Energy Shield',
@@ -203,7 +203,7 @@ export const CENTERS: Record<CenterId, CenterMeta> = {
   5: {
     id: 5,
     nameTh: 'ศูนย์ปฏิบัติการนวัตกรรมไร้สายล้ำหน้ายุค 5G',
-    shortTh: 'นวัตกรรมไร้สาย 5G',
+    shortTh: 'นวัตกรรมไร้สายล้ำหน้ายุค 5G',
     exhibitionFloorTh: 'จัดแสดงที่ ชั้น 1 (โถงนิทรรศการหลัก)',
     exhibitionFloorGroup: 1,
     powerName: '5G Super Magnet',
@@ -229,7 +229,7 @@ export const CENTERS: Record<CenterId, CenterMeta> = {
   7: {
     id: 7,
     nameTh: 'ศูนย์ปฏิบัติการเทคโนโลยีชีวภาพและเคมีชีวภาพ',
-    shortTh: 'เทคโนโลยีชีวภาพและเคมี',
+    shortTh: 'เทคโนโลยีชีวภาพและเคมีชีวภาพ',
     exhibitionFloorTh: 'ชั้น 8 (แล็บชีวภาพและเคมีชีวภาพ)',
     exhibitionFloorGroup: 8,
     powerName: 'Bio-Chem Bouncer Boots',
