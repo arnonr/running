@@ -766,7 +766,7 @@ export class UI {
     this.el['holo-title'].textContent = `ศูนย์ที่ #${meta.id}: ${meta.shortTh}`;
     this.el['holo-desc'].textContent = `${meta.powerName} — ${meta.powerDescTh}`;
     b.classList.add('on');
-    this.holoTimer = window.setTimeout(() => b.classList.remove('on'), 3400);
+    this.holoTimer = window.setTimeout(() => b.classList.remove('on'), 2000);
   }
 
   hint(text: string, ms = 2200) {

@@ -445,14 +445,14 @@ async function main() {
       case 'centerStageChange': {
         audio.level();
         const meta = CENTERS[ev.centerId];
-        ui.toast(`🌟 ด่าน ${ev.stageIndex + 1}/9: เข้าสู่ ${meta.icon} ศูนย์ที่ #${meta.id} ${meta.shortTh}!`, 2400);
+        ui.toast(`🌟 ด่าน ${ev.stageIndex + 1}/9 · ${meta.icon} #${meta.id} ${meta.shortTh}`, 1500);
         break;
       }
       case 'stumble':
       case 'hit': {
         audio.stumble();
         ui.flash('hit');
-        ui.toast(`⚠️ สะดุดสิ่งกีดขวาง -${ev.penalty} แต้ม (วิ่งต่อได้!)`, 1300);
+        ui.toast(`⚠️ สะดุดสิ่งกีดขวาง -${ev.penalty} แต้ม`, 1000);
         break;
       }
       case 'finish': {

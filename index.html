@@ -159,37 +159,47 @@ html, body {
 .active-power small { font-size: 10px; color: #cbd5e1; }
 .active-power em { position: absolute; left: 0; bottom: 0; height: 4px; width: 100%; background: var(--sky); transform-origin: left; }
 
-/* 9-Center Hologram Banner */
+/* 9-Center Hologram Banner (Compact & translucent in upper sky zone so 3D track horizon stays 100% clear) */
 .holo-banner {
-  position: absolute; left: 50%; top: calc(108px + env(safe-area-inset-top));
-  transform: translate(-50%, -12px) scale(.95);
-  width: min(460px, 92vw); background: rgba(15, 23, 42, 0.92);
-  border: 2px solid var(--sky); border-radius: 18px; padding: 10px 14px;
-  display: flex; align-items: center; gap: 12px;
-  box-shadow: 0 12px 32px rgba(0,0,0,.55), 0 0 22px rgba(56,189,248,.35);
-  opacity: 0; transition: opacity .22s, transform .22s; pointer-events: none;
+  position: absolute; left: 50%; top: calc(86px + env(safe-area-inset-top));
+  transform: translate(-50%, -8px) scale(.96);
+  width: min(360px, 88vw); background: rgba(15, 23, 42, 0.56);
+  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  border: 1px solid var(--sky); border-radius: 12px; padding: 5px 10px;
+  display: flex; align-items: center; gap: 8px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.3);
+  opacity: 0; transition: opacity .18s, transform .18s; pointer-events: none;
 }
 .holo-banner.on { opacity: 1; transform: translate(-50%, 0) scale(1); }
 .holo-ico {
-  width: 48px; height: 48px; border-radius: 14px; background: rgba(56,189,248,.18);
-  display: grid; place-items: center; font-size: 28px; flex-shrink: 0;
+  width: 30px; height: 30px; border-radius: 8px; background: rgba(56,189,248,.18);
+  display: grid; place-items: center; font-size: 18px; flex-shrink: 0;
 }
-.holo-body { flex: 1; text-align: left; }
+.holo-body { flex: 1; text-align: left; min-width: 0; }
 .holo-body .holo-tag {
-  display: inline-block; font-size: 11px; font-weight: 800; padding: 2px 8px;
-  border-radius: 999px; background: rgba(56,189,248,.22); color: var(--sky); margin-bottom: 3px;
+  display: inline-block; font-size: 9.5px; font-weight: 800; padding: 1px 6px;
+  border-radius: 999px; background: rgba(56,189,248,.22); color: var(--sky); margin-bottom: 1px;
 }
-.holo-body h4 { margin: 0; font-size: 14px; font-weight: 900; color: #fff; line-height: 1.25; }
-.holo-body p { margin: 2px 0 0; font-size: 12px; color: #cbd5e1; line-height: 1.3; }
+.holo-body h4 {
+  margin: 0; font-size: 12px; font-weight: 900; color: #fff; line-height: 1.15;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.holo-body p {
+  margin: 1px 0 0; font-size: 10.5px; color: #cbd5e1; line-height: 1.15;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 
 .hint, .toast {
   position: absolute; left: 50%; transform: translateX(-50%);
-  background: var(--panel); border: 1px solid var(--line); padding: 8px 16px;
-  border-radius: 999px; font-weight: 800; opacity: 0; transition: opacity .2s;
-  max-width: 90vw; text-align: center;
+  background: rgba(15, 23, 42, 0.56);
+  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  border: 1px solid rgba(148, 163, 184, 0.28); padding: 4px 12px;
+  border-radius: 999px; font-weight: 800; opacity: 0; transition: opacity .18s;
+  max-width: 92vw; text-align: center; pointer-events: none;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.hint { bottom: calc(130px + env(safe-area-inset-bottom)); font-size: 14px; color: var(--gold); }
-.toast { top: 40%; font-size: clamp(14px, 3.8vw, 20px); color: #fff; border-radius: 16px; }
+.hint { bottom: calc(114px + env(safe-area-inset-bottom)); font-size: 11.5px; color: var(--gold); }
+.toast { bottom: calc(84px + env(safe-area-inset-bottom)); font-size: clamp(11.5px, 2.8vw, 13px); color: #fff; }
 .hint.on, .toast.on { opacity: 1; }
 
 /* On-Screen Mobile Touch Controller Pad */
