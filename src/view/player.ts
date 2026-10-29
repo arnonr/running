@@ -152,7 +152,7 @@ export class PlayerView {
     const next = this.actions[name];
     if (!next) return;
     next.timeScale = timeScale;
-    if (this.current === name && next.isRunning()) return;
+    if (this.current === name && (next.isRunning() || (name === 'die' && next.paused))) return;
     next.reset().setEffectiveWeight(1).fadeIn(fade).play();
     const prev = this.current ? this.actions[this.current] : null;
     if (prev && prev !== next) prev.fadeOut(fade);
@@ -173,6 +173,7 @@ export class PlayerView {
     this.root.scale.set(1, 1, 1);
     this.root.rotation.set(0, 0, 0);
     this.root.visible = true;
+    this.model.visible = true;
     this.setCenterEffect(null, 0);
   }
 
@@ -205,10 +206,16 @@ export class PlayerView {
       } else if (e.type === 'stumble' || e.type === 'hit') {
         this.stumbleT = 0.55;
         this.play('runlookback', 0.08, 1.8);
+      } else if (e.type === 'eliminated') {
+        this.stumbleT = 0;
+        this.play('die', 0.06, 1.0);
       }
     }
     this.stumbleT = Math.max(0, this.stumbleT - dt);
-    if (sim.alive) {
+    if (!sim.alive) {
+      this.stumbleT = 0;
+      this.play('die', 0.08, 1.0);
+    } else {
       const busy = (this.current === 'jump' && !sim.grounded) || (this.current === 'roll' && sim.sliding) || this.stumbleT > 0;
       if (!busy) {
         if (sim.activeCenter === 1) this.play('jumpup', 0.15, 0.5);
@@ -231,13 +238,13 @@ export class PlayerView {
     this.root.scale.set(1 + sq * 0.5, 1 - sq, 1 + sq * 0.5);
 
     // Invulnerability blink after stumble/hit
-    if (sim.invulnerableT > 0 && sim.activeCenter === null) {
+    if (sim.alive && sim.invulnerableT > 0 && sim.activeCenter === null) {
       this.model.visible = Math.floor(sim.invulnerableT * 16) % 2 === 0;
     } else {
       this.model.visible = true;
     }
 
-    this.setCenterEffect(sim.activeCenter, sim.time);
+    this.setCenterEffect(sim.alive ? sim.activeCenter : null, sim.time);
     this.mixer.update(dt);
     updateAvatarMotion(this.model, sim.time, sim.alive);
   }

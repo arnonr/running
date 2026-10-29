@@ -1,5 +1,10 @@
-import { describe, expect, it } from 'vitest';
-import { MatchRoomCore, MultiChannelRoomRegistry, NetClient } from '../src/net';
+import { describe, expect, it, vi } from 'vitest';
+import * as THREE from 'three';
+import { MatchRoomCore, MultiChannelRoomRegistry, NetClient, type RunnerNetState } from '../src/net';
+import { Audio } from '../src/audio';
+import { PlayerView } from '../src/view/player';
+import { World, TV_ANCHOR_Z } from '../src/view/world';
+import { Sim } from '../src/sim/sim';
 
 describe('MatchRoomCore: Lives Authority, Early Podium, Winner Ranking & Anti-Respawn', () => {
   it('terminates RUNNING into PODIUM immediately when all humans die (ignoring bots), while bot-only rounds run full duration', () => {
@@ -307,5 +312,248 @@ describe('MatchRoomCore: Lives Authority, Early Podium, Winner Ranking & Anti-Re
     expect(snap.top10[0].lives).toBe(2);
     expect(snap.top10[0].score).toBe(7500);
     expect(snap.top10[0].d).toBe(2800);
+  });
+});
+
+describe('Audio & PlayerView 3D Elimination Behavior', () => {
+  it('plays die animation clip, clamps final pose without looping, forces model visible, and clears active attachments when runner is eliminated', () => {
+    const audio = new Audio();
+    expect(() => audio.eliminated()).not.toThrow();
+
+    // Also verify WebAudio synthesis calls when AudioContext is active
+    const oscFreqs: Array<[number, number]> = [];
+    const filterFreqs: Array<[string, number, number]> = [];
+    audio.ctx = {
+      currentTime: 10,
+      createOscillator: () => {
+        let f0 = 0;
+        return {
+          type: 'sine',
+          frequency: {
+            setValueAtTime: (v: number) => { f0 = v; },
+            exponentialRampToValueAtTime: (v: number) => { oscFreqs.push([f0, v]); },
+          },
+          connect: () => ({ connect: () => {} }),
+          start: () => {},
+          stop: () => {},
+        };
+      },
+      createBufferSource: () => ({
+        buffer: null,
+        connect: () => ({ connect: () => ({ connect: () => {} }) }),
+        start: () => {},
+        stop: () => {},
+      }),
+      createBiquadFilter: () => {
+        const fObj: any = {
+          type: 'bandpass',
+          Q: { value: 1 },
+          f0: 0,
+          frequency: {
+            setValueAtTime: (v: number) => { fObj.f0 = v; },
+            exponentialRampToValueAtTime: (v: number) => { filterFreqs.push([fObj.type, fObj.f0, v]); },
+          },
+        };
+        return fObj;
+      },
+      createGain: () => ({
+        gain: {
+          value: 1,
+          setValueAtTime: () => {},
+          exponentialRampToValueAtTime: () => {},
+        },
+        connect: () => {},
+      }),
+    } as any;
+    expect(() => audio.eliminated()).not.toThrow();
+    expect(filterFreqs).toEqual([['lowpass', 1600, 140]]);
+    expect(oscFreqs).toEqual([
+      [320, 180],
+      [220, 110],
+      [140, 55],
+    ]);
+
+    const gltfScene = new THREE.Group();
+    const playerObj = new THREE.Group();
+    playerObj.name = 'player';
+    gltfScene.add(playerObj);
+    const makeClip = (name: string) =>
+      new THREE.AnimationClip(name, 0.8, [new THREE.NumberKeyframeTrack('.position[y]', [0, 0.8], [0, 0])]);
+    const animations = ['idle', 'run', 'jump', 'jumpup', 'fall', 'roll', 'die', 'runlookback'].map(makeClip);
+
+    const viewScene = new THREE.Scene();
+    const pv = new PlayerView({ scene: gltfScene, animations } as any, viewScene);
+
+    const sim = new Sim(1);
+    sim.noSpawn = true;
+    sim.reset(1, false, 180, 1);
+    sim.start();
+    sim.activateCenter(4);
+    sim.shieldHits = 0; // shield spent, next front hit is fatal
+    sim.invulnerableT = 0;
+    sim.addOb({ kind: 'train', lane: 1, d0: sim.d + 2, d1: sim.d + 8, cars: 1 });
+    sim.update(0.35);
+
+    const events = sim.drainEvents();
+    expect(sim.alive).toBe(false);
+    pv.update(sim, 0.016, events);
+
+    expect(pv.current).toBe('die');
+    expect(pv.model.visible).toBe(true);
+    expect(Object.values(pv.attachments).every((grp) => !grp.visible)).toBe(true);
+
+    // Even if invulnerableT were non-zero or clip finishes (> 0.8s), model stays visible and die stays clamped at 0.8s
+    sim.invulnerableT = 0.21;
+    pv.update(sim, 0.5, []);
+    pv.update(sim, 0.5, []);
+    expect(pv.current).toBe('die');
+    expect(pv.model.visible).toBe(true);
+    expect(pv.actions.die.paused).toBe(true);
+    expect(pv.actions.die.time).toBeCloseTo(0.8, 2);
+  });
+});
+
+describe('World TV Ghost 3D Elimination & Podium Grid Behavior', () => {
+  function makeMockCoreGltf() {
+    const scene = new THREE.Group();
+    const player = new THREE.Group();
+    player.name = 'player';
+    player.add(new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.6, 0.4), new THREE.MeshLambertMaterial()));
+    scene.add(player);
+
+    for (const partName of ['train', 'low', 'hurdle', 'overhead', 'coin']) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial());
+      m.name = partName;
+      scene.add(m);
+    }
+
+    const makeClip = (name: string) =>
+      new THREE.AnimationClip(name, 0.8, [new THREE.NumberKeyframeTrack('.position[y]', [0, 0.8], [0, 0])]);
+    const animations = ['idle', 'run', 'jump', 'jumpup', 'fall', 'roll', 'die', 'runlookback'].map(makeClip);
+    return { scene, animations };
+  }
+
+  it('plays die + red burst on eliminated TV ghosts, drifts backward for 1.4s then hides during RUNNING, and reappears in idle on PODIUM grid', () => {
+    const world = new World(makeMockCoreGltf() as any, { shadowSize: 512 });
+    const burstSpy = vi.spyOn(world.fx, 'burst');
+
+    world.event({
+      type: 'eliminated',
+      kind: 'train',
+      x: 0,
+      y: 0,
+      score: 600,
+      coins: 12,
+      distance: 150,
+      survivedSec: 18,
+      hitCount: 3,
+    });
+    expect((world as any).shake).toBeCloseTo(0.5, 2);
+    expect(burstSpy).toHaveBeenCalledWith(0, 1, -0.3, 28, 0xf43f5e, expect.any(Object));
+    burstSpy.mockClear();
+
+    const sim = new Sim(202610);
+    sim.noSpawn = true;
+    sim.reset(202610, false, 180);
+    sim.d = 160;
+    sim.speed = 18;
+
+    const makeRunner = (overrides: Partial<RunnerNetState> & { id: string; name: string }): RunnerNetState => ({
+      role: 'senior',
+      color: '#38bdf8',
+      avatar: 'non',
+      score: 1000,
+      d: 160,
+      floor: 2,
+      coins: 10,
+      activeCenter: null,
+      collectedCount: 0,
+      lane: 1,
+      x: 0,
+      y: 0,
+      sliding: false,
+      stumbling: false,
+      isBot: false,
+      rank: 1,
+      packOffsetZ: 0,
+      lives: 3,
+      maxLives: 3,
+      eliminated: false,
+      survivedSec: 15,
+      ...overrides,
+    });
+
+    const runners: RunnerNetState[] = [
+      makeRunner({ id: 'h1', name: 'นนท์', rank: 1, lane: 0, x: -2.4, activeCenter: 4 }),
+      makeRunner({ id: 'h2', name: 'เมย์', rank: 2, lane: 2, x: 2.4, color: '#ec4899' }),
+    ];
+
+    // Frame 0: both runners alive and running on TV
+    world.sync(sim, 0.05, false, runners, '', true);
+    const slots = (world as any).ghostSlots as any[];
+    const h1Slot = slots.find((s) => s.runnerId === 'h1')!;
+    const h2Slot = slots.find((s) => s.runnerId === 'h2')!;
+    expect(h1Slot.group.visible).toBe(true);
+    expect(h1Slot.attachments[4].visible).toBe(true);
+    expect(h1Slot.currentClip).toBe('run');
+    burstSpy.mockClear();
+
+    // h1 crashes and is eliminated (even if last y was airborne / on roof, e.g. y = 2.65); surviving h2 becomes Rank #1 anchor!
+    runners[0].eliminated = true;
+    runners[0].lives = 0;
+    runners[0].rank = 2;
+    runners[0].y = 2.65;
+    runners[1].rank = 1;
+
+    const zBeforeElim = h1Slot.z;
+    world.sync(sim, 0.05, false, runners, '', true);
+    expect(h1Slot.currentClip).toBe('die');
+    expect(h1Slot.group.visible).toBe(true);
+    expect(h1Slot.charClone.visible).toBe(true);
+    expect(Object.values(h1Slot.attachments).every((grp: any) => !grp.visible)).toBe(true);
+    expect(h1Slot.z).toBeCloseTo(zBeforeElim + 18 * 0.05 * 0.55, 4);
+    const redBursts = burstSpy.mock.calls.filter((c) => c[3] === 26 && c[4] === 0xf43f5e);
+    expect(redBursts).toHaveLength(1);
+
+    // Advance 1.0s more (total 1.05s: past 0.8s clip duration, still <= 1.4s): die clamps without restarting, no duplicate burst
+    world.sync(sim, 0.5, false, runners, '', true);
+    world.sync(sim, 0.5, false, runners, '', true);
+    expect(h1Slot.group.visible).toBe(true);
+    expect(h1Slot.actions.die.paused).toBe(true);
+    expect(h1Slot.actions.die.time).toBeCloseTo(0.8, 2);
+    expect(burstSpy.mock.calls.filter((c) => c[3] === 26 && c[4] === 0xf43f5e)).toHaveLength(1);
+
+    // Advance 0.5s more (total 1.55s > 1.4s): fallen h1 hides while surviving h2 keeps running anchored near TV_ANCHOR_Z
+    world.sync(sim, 0.5, false, runners, '', true);
+    expect(h1Slot.group.visible).toBe(false);
+    expect(h2Slot.group.visible).toBe(true);
+    expect(h2Slot.currentClip).toBe('run');
+    expect(h2Slot.z).toBeCloseTo(TV_ANCHOR_Z, 0);
+
+    // Transition to PODIUM (!isRunning: sim.speed = 0): eliminated h1 reappears on podium grid in 'idle' grounded at y = 0
+    sim.d = 0;
+    sim.speed = 0;
+    world.sync(sim, 0.05, false, runners, '', true);
+    expect(h1Slot.eliminatedTimer).toBe(0);
+    expect(h1Slot.group.visible).toBe(true);
+    expect(h1Slot.currentClip).toBe('idle');
+    expect(h1Slot.y).toBeCloseTo(0, 3);
+
+    // Next round RUNNING: h1 leaves and h3 takes h1Slot -> eliminatedTimer starts clean and replays 'die' from t=0 if h3 dies
+    sim.d = 50;
+    sim.speed = 16;
+    const round2Runners: RunnerNetState[] = [
+      makeRunner({ id: 'h3', name: 'คิน', rank: 1, lane: 1, x: 0, eliminated: true, lives: 0 }),
+      makeRunner({ id: 'h2', name: 'เมย์', rank: 2, lane: 2, x: 2.4, color: '#ec4899' }),
+    ];
+    burstSpy.mockClear();
+    world.sync(sim, 0.05, false, round2Runners, '', true);
+    const h3Slot = slots.find((s) => s.runnerId === 'h3')!;
+    expect(h3Slot).toBe(h1Slot);
+    expect(h3Slot.group.visible).toBe(true);
+    expect(h3Slot.currentClip).toBe('die');
+    expect(h3Slot.actions.die.paused).toBe(false);
+    expect(h3Slot.eliminatedTimer).toBeCloseTo(0.05, 4);
+    expect(burstSpy.mock.calls.filter((c) => c[3] === 26 && c[4] === 0xf43f5e)).toHaveLength(1);
   });
 });

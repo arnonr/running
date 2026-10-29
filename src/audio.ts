@@ -107,6 +107,12 @@ export class Audio {
     this.hiss(0.18, 0.45, 1500, 300);
     this.tone(200, 0.2, 'sawtooth', 0.12, 90);
   }
+  eliminated() {
+    this.hiss(0.42, 0.55, 1600, 140, 0, 'lowpass');
+    this.tone(320, 0.16, 'sawtooth', 0.18, 180, 0);
+    this.tone(220, 0.18, 'sawtooth', 0.16, 110, 0.1);
+    this.tone(140, 0.28, 'triangle', 0.2, 55, 0.22);
+  }
   countdownBeep(final: boolean) {
     this.tone(final ? 880 : 440, final ? 0.35 : 0.14, 'square', 0.12);
   }

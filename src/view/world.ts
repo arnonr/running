@@ -70,6 +70,7 @@ interface GhostSlot {
   wasStumbling: boolean;
   blinkTimer: number;
   stumbleAnimTimer: number;
+  eliminatedTimer: number;
   lastHitObId: number;
   supportY: number;
   vy: number;
@@ -1205,6 +1206,7 @@ export class World {
         wasStumbling: false,
         blinkTimer: 0,
         stumbleAnimTimer: 0,
+        eliminatedTimer: 0,
         lastHitObId: -1,
         supportY: 0,
         vy: 0,
@@ -1225,7 +1227,7 @@ export class World {
     const next = slot.actions[name];
     if (!next) return;
     next.timeScale = timeScale;
-    if (slot.currentClip === name && next.isRunning()) return;
+    if (slot.currentClip === name && (next.isRunning() || (name === 'die' && next.paused))) return;
     next.reset().setEffectiveWeight(1).fadeIn(fade).play();
     const prev = slot.currentClip ? slot.actions[slot.currentClip] : null;
     if (prev && prev !== next) prev.fadeOut(fade);
@@ -1328,6 +1330,10 @@ export class World {
       case 'hit':
         this.shake = 0.38;
         fx.burst(ev.x, ev.y + 1, -0.3, 14, 0xfb7185, { speed: 3.8, up: 1.2, size: 0.4, life: 0.4 });
+        break;
+      case 'eliminated':
+        this.shake = 0.5;
+        fx.burst(ev.x, ev.y + 1, -0.3, 28, 0xf43f5e, { speed: 5.5, up: 3.2, size: 0.58, life: 0.55 });
         break;
       case 'bump':
         this.shake = 0.15;
@@ -1638,6 +1644,7 @@ export class World {
       for (const slot of this.ghostSlots) {
         slot.group.visible = false;
         slot.runnerId = '';
+        slot.eliminatedTimer = 0;
       }
       return;
     }
@@ -1652,6 +1659,7 @@ export class World {
         assigned.add(slot.runnerId);
       } else {
         slot.runnerId = '';
+        slot.eliminatedTimer = 0;
       }
     }
     for (const g of others) {
@@ -1660,13 +1668,18 @@ export class World {
       if (freeSlot) {
         freeSlot.runnerId = g.id;
         freeSlot.x = g.x ?? laneX(g.lane);
-        freeSlot.y = g.y ?? 0;
+        freeSlot.y = !isRunning && g.eliminated ? 0 : (g.y ?? 0);
         freeSlot.z = tvMode ? TV_ANCHOR_Z : -g.packOffsetZ - 2;
         freeSlot.supportY = 0;
         freeSlot.vy = 0;
         freeSlot.prevLane = g.lane;
         freeSlot.blinkTimer = 0;
         freeSlot.stumbleAnimTimer = 0;
+        freeSlot.eliminatedTimer = 0;
+        if (freeSlot.currentClip === 'die') {
+          freeSlot.actions.die?.stop();
+          freeSlot.currentClip = null;
+        }
         freeSlot.lastHitObId = -1;
         freeSlot.lean = 0;
         freeSlot.squash = 0;
@@ -1675,7 +1688,10 @@ export class World {
       }
     }
 
-    const anchorRunner = others.find((r) => !r.isBot) || others[0];
+    const anchorRunner =
+      others.find((r) => !r.isBot && !r.eliminated) ||
+      others.find((r) => !r.eliminated) ||
+      others[0];
     const anchorRank = anchorRunner ? anchorRunner.rank : 1;
     const anchorZ = tvMode ? TV_ANCHOR_Z : 0;
     const laneCounts = [0, 0, 0];
@@ -1687,12 +1703,52 @@ export class World {
         slot.group.visible = false;
         continue;
       }
-      slot.group.visible = true;
       const gAvatar = sanitizeAvatarId(g.avatar);
       if (slot.avatar !== gAvatar) {
         slot.avatar = gAvatar;
         applyAvatarToCharacter(slot.charClone, gAvatar);
       }
+
+      if (isRunning && g.eliminated) {
+        if (slot.eliminatedTimer === 0) {
+          this.fx.burst(slot.x, slot.y + 0.9, slot.z, 26, 0xf43f5e, {
+            speed: 5.5, up: 3.4, size: 0.58, life: 0.55,
+          });
+          updateCenterAttachments(slot.attachments, null, this.time);
+          slot.activeCenter = null;
+          slot.blinkTimer = 0;
+          slot.stumbleAnimTimer = 0;
+          this.playGhostClip(slot, 'die', 0.06, 1.0);
+        }
+        slot.eliminatedTimer += dt;
+        if (slot.eliminatedTimer > 1.4) {
+          slot.group.visible = false;
+          continue;
+        }
+        slot.group.visible = true;
+        updateCenterAttachments(slot.attachments, null, this.time);
+        this.playGhostClip(slot, 'die', 0.08, 1.0);
+        slot.z += sim.speed * dt * 0.55;
+        slot.y += (slot.supportY - slot.y) * Math.min(1, dt * 22);
+        slot.group.position.set(slot.x, slot.y, slot.z);
+        slot.charClone.visible = true;
+        slot.charClone.scale.set(0.92, 0.92, 0.92);
+        slot.lean += (0 - slot.lean) * Math.min(1, dt * 14);
+        slot.charClone.rotation.set(0, Math.PI - slot.lean * 0.35, -slot.lean * 0.18);
+        (slot.ring.material as THREE.MeshBasicMaterial).color.set(g.color);
+        const badgeKey = `${g.rank}:${g.name}:${g.color}`;
+        if (slot.badgeKey !== badgeKey) {
+          slot.badgeKey = badgeKey;
+          const sm = slot.badge.material as THREE.SpriteMaterial;
+          sm.map = nameBadgeTexture(g.name, g.rank, g.color);
+          sm.needsUpdate = true;
+        }
+        slot.mixer.update(dt);
+        updateAvatarMotion(slot.charClone, this.time + i * 0.37, false);
+        continue;
+      }
+
+      slot.group.visible = true;
 
       // Track distance at this ghost's rendered Z position (`zOf(d) = anchorZ - (d - sim.d)`)
       const slotD = sim.d + (anchorZ - slot.z);
@@ -1706,19 +1762,29 @@ export class World {
       let targetX: number;
       let targetZ: number;
       if (!isRunning) {
-        // Starting Line Grid in LOBBY / COUNTDOWN: spread runners across 3 columns and rows so all are clearly visible!
+        // Starting Line Grid in LOBBY / COUNTDOWN / PODIUM: spread runners across 3 columns and rows so all are clearly visible!
+        const wasEliminatedOnTrack = slot.eliminatedTimer > 0;
         const gridCol = (i % 3) - 1;
         const gridRow = Math.floor(i / 3);
-        const hasCustomLane = !g.isBot && (g.lane !== 1 || Math.abs(g.x) > 0.05);
+        const hasCustomLane = !g.isBot && !g.eliminated && (g.lane !== 1 || Math.abs(g.x) > 0.05);
         targetX = hasCustomLane ? laneX(g.lane) + gridCol * 0.25 : gridCol * 2.15;
         targetZ = -1.2 - gridRow * 2.4;
+        if (wasEliminatedOnTrack) {
+          slot.x = targetX;
+          slot.y = 0;
+          slot.z = targetZ;
+          slot.lean = 0;
+          slot.squash = 0;
+        }
         slot.supportY = 0;
         slot.vy = 0;
         slot.blinkTimer = 0;
         slot.stumbleAnimTimer = 0;
+        slot.eliminatedTimer = 0;
         slot.lastHitObId = -1;
         slot.prevLane = g.lane;
       } else {
+        slot.eliminatedTimer = 0;
         const laneIdx = Math.max(0, Math.min(2, effectiveLane));
         const sameLaneCount = laneCounts[laneIdx];
         laneCounts[laneIdx]++;
@@ -1742,7 +1808,7 @@ export class World {
       const prevY = slot.y;
       const wasAboveSupport = slot.y > slot.supportY + 0.18;
       if (!isRunning) {
-        targetY = g.y ?? 0;
+        targetY = g.eliminated ? 0 : (g.y ?? 0);
       } else {
         const sameLane = slot.prevLane === effectiveLane;
         const rawSupportY =
@@ -1784,16 +1850,17 @@ export class World {
       slot.group.position.set(slot.x, slot.y, slot.z);
 
       // Update 3D 9-Center power-up attachments & particle bursts on TV
-      updateCenterAttachments(slot.attachments, g.activeCenter, this.time + i * 0.4);
-      if (slot.activeCenter !== g.activeCenter) {
-        if (g.activeCenter !== null) {
-          const pCol = CENTERS[g.activeCenter].color;
+      const shownCenter = !isRunning && g.eliminated ? null : g.activeCenter;
+      updateCenterAttachments(slot.attachments, shownCenter, this.time + i * 0.4);
+      if (slot.activeCenter !== shownCenter) {
+        if (shownCenter !== null) {
+          const pCol = CENTERS[shownCenter].color;
           this.fx.burst(slot.x, slot.y + 1.0, slot.z, 22, pCol, {
             speed: 4.6, up: 3.6, size: 0.55, life: 0.55,
           });
           if (!g.isBot) this.flash = 0.25;
         }
-        slot.activeCenter = g.activeCenter;
+        slot.activeCenter = shownCenter;
       }
       if (isRunning && g.activeCenter !== null && Math.random() < dt * 26) {
         const pCol = CENTERS[g.activeCenter].color;
@@ -1867,7 +1934,7 @@ export class World {
 
       // Animation state machine (idle, run, jump, fall, roll, jumpup, runlookback)
       if (!isRunning) {
-        if ((g.y ?? 0) > 0.25) {
+        if (!g.eliminated && (g.y ?? 0) > 0.25) {
           this.playGhostClip(slot, 'jump', 0.06, 1.1);
         } else {
           this.playGhostClip(slot, 'idle', 0.2, 1.0);
