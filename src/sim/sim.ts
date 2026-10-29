@@ -618,6 +618,61 @@ export class Sim {
     return null;
   }
 
+  /**
+   * Lookahead obstacle evasion for simulated bots on the shared track so bots
+   * smoothly steer around trains, jump low barriers/hurdles, and duck overhead gates.
+   */
+  botEvadeActionAt(
+    lane: number,
+    d: number,
+    y: number,
+    supportY: number,
+    activeCenter: CenterId | null,
+  ): { targetLane: number; jump: boolean; slide: boolean } {
+    if (activeCenter === 1 || activeCenter === 9) {
+      return { targetLane: lane, jump: false, slide: false };
+    }
+    const effectiveY = Math.max(y, supportY);
+    const hasBlockedTrain = (checkLane: number) => {
+      const hasLeadingRamp = this.obs.some(
+        (r) => r.kind === 'ramp' && r.lane === checkLane && r.d1 >= d - 2 && r.d0 <= d + 16,
+      );
+      if (hasLeadingRamp) return false;
+      for (const o of this.obs) {
+        if (o.lane !== checkLane) continue;
+        if (o.kind !== 'train' && o.kind !== 'mtrain') continue;
+        if (o.d1 <= d - 1 || o.d0 >= d + 18) continue;
+        if (effectiveY >= o.yt - PLAYER.stepUp * 1.6) continue;
+        return true;
+      }
+      return false;
+    };
+
+    let targetLane = lane;
+    if (hasBlockedTrain(lane)) {
+      const candidates = [0, 1, 2].sort((a, b) => Math.abs(a - lane) - Math.abs(b - lane));
+      for (const c of candidates) {
+        if (!hasBlockedTrain(c)) {
+          targetLane = c;
+          break;
+        }
+      }
+    }
+
+    let jump = false;
+    let slide = false;
+    for (const o of this.obs) {
+      if (o.lane !== targetLane) continue;
+      if (o.d1 <= d - 0.5 || o.d0 >= d + 9.5) continue;
+      if ((o.kind === 'low' || o.kind === 'hurdle') && effectiveY < o.yt) {
+        jump = true;
+      } else if (o.kind === 'overhead' && effectiveY + PLAYER.height - PLAYER.headTol > o.yb) {
+        slide = true;
+      }
+    }
+    return { targetLane, jump, slide };
+  }
+
   topAt(o: Ob, d: number) {
     if (o.kind === 'ramp') return Math.max(0, Math.min(1, (d - o.d0) / (o.d1 - o.d0))) * o.yt;
     return o.yt;

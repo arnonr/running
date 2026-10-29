@@ -313,12 +313,14 @@ export function stepTvClock(
   }
 
   const targetElapsed = Math.max(0, Math.min(matchDuration, matchDuration - Math.max(0, phaseTimeLeft)));
-  let next = prevElapsed + Math.max(0, dt);
-  const diff = targetElapsed - next;
-  if (Math.abs(diff) > 1.5) {
+  const safeDt = Math.max(0, dt);
+  const drift = targetElapsed - (prevElapsed + safeDt);
+  let next: number;
+  if (Math.abs(drift) > 1.5) {
     next = targetElapsed;
   } else {
-    next += diff * Math.min(1, Math.max(0, dt) * 6);
+    const rate = Math.max(0.8, Math.min(1.2, 1 + drift * 2.0));
+    next = Math.max(prevElapsed, prevElapsed + safeDt * rate);
   }
 
   const elapsed = Math.max(0, Math.min(matchDuration, next));

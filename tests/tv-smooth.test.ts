@@ -120,4 +120,49 @@ describe('TV Mode 60 FPS Smooth Clock & Badge Cache', () => {
     // Flying with Center #1 or #9 is immune
     expect(sim.ghostObstacleHitAt(0, laneX(0), 0, 80.2, false, 1, 0)).toBeNull();
   });
+
+  it('keeps per-frame TV velocity smooth within ±20% across 10Hz snapshot steps and exports high-precision phaseTimeLeft', () => {
+    const dt = 1 / 60;
+    let elapsed = 10.0;
+    for (let f = 0; f < 6; f++) {
+      const st = stepTvClock(elapsed, dt, 'RUNNING', 170.0, 180);
+      const step = st.elapsed - elapsed;
+      expect(step).toBeGreaterThanOrEqual(dt * 0.79);
+      expect(step).toBeLessThanOrEqual(dt * 1.21);
+      elapsed = st.elapsed;
+    }
+    // Snapshot now steps by 0.1s to 169.9s
+    const afterStep = stepTvClock(elapsed, dt, 'RUNNING', 169.9, 180);
+    const stepAfter = afterStep.elapsed - elapsed;
+    expect(stepAfter).toBeGreaterThanOrEqual(dt * 0.79);
+    expect(stepAfter).toBeLessThanOrEqual(dt * 1.21);
+
+    const room = new MatchRoomCore('1');
+    room.hostCommand({ action: 'start_now' });
+    room.tick(3.5);
+    room.tick(0.033);
+    const snap = room.getSnapshot();
+    expect(snap.phaseTimeLeft).toBeCloseTo(180 - 0.033, 2);
+  });
+
+  it('computes smart bot obstacle evasion (lane steer for trains, jump for low/hurdle, slide for overhead)', () => {
+    const sim = new Sim(202610);
+    sim.noSpawn = true;
+    sim.reset(202610, false, 180);
+
+    // Train blocking lane 1 at d = 100..114 -> bot at d = 90 in lane 1 steers to lane 0 or 2
+    sim.addOb({ kind: 'train', lane: 1, d0: 100, d1: 114, cars: 2 });
+    const evTrain = sim.botEvadeActionAt(1, 90, 0, 0, null);
+    expect(evTrain.targetLane).not.toBe(1);
+
+    // Low barrier in lane 0 at d = 140 -> bot at d = 134 in lane 0 jumps
+    sim.addOb({ kind: 'low', lane: 0, d0: 140, d1: 140 + OB.low.depth });
+    const evLow = sim.botEvadeActionAt(0, 134, 0, 0, null);
+    expect(evLow.jump).toBe(true);
+
+    // Overhead barrier in lane 2 at d = 170 -> bot at d = 164 in lane 2 slides
+    sim.addOb({ kind: 'overhead', lane: 2, d0: 170, d1: 170 + OB.overhead.depth });
+    const evOver = sim.botEvadeActionAt(2, 164, 0, 0, null);
+    expect(evOver.slide).toBe(true);
+  });
 });

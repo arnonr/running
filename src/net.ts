@@ -390,7 +390,7 @@ export class MatchRoomCore {
         const wave = Math.sin(elapsed * 0.45 + idx * 1.7);
         const botFactor = 0.96 + (idx % 3) * 0.035 + wave * 0.03;
         r.d = +(this.referenceDistance * botFactor).toFixed(1);
-        r.lane = ((Math.floor(elapsed / 3.2) + idx) % 3 + 3) % 3;
+        r.lane = ((Math.floor((elapsed + idx * 1.15) / 3.4) + idx) % 3 + 3) % 3;
         r.x = laneX(r.lane);
         r.floor = this.currentFloor;
         r.coins = Math.floor(elapsed * (1.8 + idx * 0.25));
@@ -408,7 +408,8 @@ export class MatchRoomCore {
           r.sliding = false;
           r.stumbling = false;
         } else {
-          r.y = Math.sin(elapsed * 3 + idx) > 0.85 ? 1.5 : 0;
+          const jumpWave = Math.sin(elapsed * 2.8 + idx * 1.3);
+          r.y = jumpWave > 0.72 ? +(((jumpWave - 0.72) / 0.28) * 1.55).toFixed(2) : 0;
           r.sliding = r.y === 0 && Math.sin(elapsed * 2.1 + idx * 1.9) > 0.9;
           r.stumbling = false;
         }
@@ -535,11 +536,11 @@ export class MatchRoomCore {
       channel: this.channel,
       matchId: this.matchId,
       phase: this.phase,
-      phaseTimeLeft: +Math.max(0, this.phaseTimeLeft).toFixed(1),
+      phaseTimeLeft: +Math.max(0, this.phaseTimeLeft).toFixed(3),
       matchDuration: this.matchDuration,
       lobbyHold: this.lobbyHold,
       matchSeed: this.matchSeed,
-      referenceDistance: +this.referenceDistance.toFixed(1),
+      referenceDistance: +this.referenceDistance.toFixed(2),
       currentFloor: this.currentFloor,
       activeRunners: runners,
       top10: runners.slice(0, 10),

@@ -1694,6 +1694,15 @@ export class World {
         applyAvatarToCharacter(slot.charClone, gAvatar);
       }
 
+      // Track distance at this ghost's rendered Z position (`zOf(d) = anchorZ - (d - sim.d)`)
+      const slotD = sim.d + (anchorZ - slot.z);
+      const botEvade =
+        isRunning && g.isBot
+          ? sim.botEvadeActionAt(g.lane, slotD, slot.y, slot.supportY, g.activeCenter)
+          : null;
+      const effectiveLane = botEvade ? botEvade.targetLane : g.lane;
+      const effectiveSliding = !botEvade?.jump && (!!g.sliding || !!botEvade?.slide);
+
       let targetX: number;
       let targetZ: number;
       if (!isRunning) {
@@ -1710,25 +1719,24 @@ export class World {
         slot.lastHitObId = -1;
         slot.prevLane = g.lane;
       } else {
-        const laneIdx = Math.max(0, Math.min(2, g.lane));
+        const laneIdx = Math.max(0, Math.min(2, effectiveLane));
         const sameLaneCount = laneCounts[laneIdx];
         laneCounts[laneIdx]++;
-        const spreadX = sameLaneCount === 0 ? 0 : (sameLaneCount % 2 === 1 ? 1 : -1) * 0.26;
+        const spreadX = sameLaneCount === 0 ? 0 : ((i % 3) - 1) * 0.2;
         const baseX =
-          !g.isBot && Math.abs((g.x ?? laneX(g.lane)) - laneX(g.lane)) > 0.02 ? g.x : laneX(g.lane);
+          !g.isBot && Math.abs((g.x ?? laneX(effectiveLane)) - laneX(effectiveLane)) > 0.02
+            ? g.x
+            : laneX(effectiveLane);
         targetX = baseX + spreadX;
         const rankZ = TV_ANCHOR_Z + (g.rank - anchorRank) * 1.45;
         const packShift = g.id === anchorRunner?.id ? 0 : g.packOffsetZ * 0.25;
         targetZ = Math.max(-11.0, Math.min(-1.2, rankZ - packShift));
       }
 
-      const kx = Math.min(1, dt * 18);
-      const kz = Math.min(1, dt * 10);
+      const kx = Math.min(1, dt * 14);
+      const kz = Math.min(1, dt * 5.5);
       slot.x += (targetX - slot.x) * kx;
       slot.z += (targetZ - slot.z) * kz;
-
-      // Track distance at this ghost's rendered Z position (`zOf(d) = anchorZ - (d - sim.d)`)
-      const slotD = sim.d + (anchorZ - slot.z);
 
       let targetY: number;
       const prevY = slot.y;
@@ -1736,12 +1744,12 @@ export class World {
       if (!isRunning) {
         targetY = g.y ?? 0;
       } else {
-        const sameLane = slot.prevLane === g.lane;
+        const sameLane = slot.prevLane === effectiveLane;
         const rawSupportY =
           g.activeCenter === 1
             ? 0
-            : sim.ghostSupportAt(g.lane, laneX(g.lane), slotD, slot.supportY, sameLane);
-        slot.prevLane = g.lane;
+            : sim.ghostSupportAt(effectiveLane, laneX(effectiveLane), slotD, slot.supportY, sameLane);
+        slot.prevLane = effectiveLane;
         if (rawSupportY >= slot.supportY) {
           slot.supportY = rawSupportY;
           slot.vy = 0;
@@ -1759,7 +1767,8 @@ export class World {
         } else if (!g.isBot) {
           targetY = Math.max(slot.supportY, g.y ?? 0);
         } else {
-          targetY = slot.supportY > 0.05 ? slot.supportY : (g.y ?? 0);
+          const baseBotY = slot.supportY > 0.05 ? slot.supportY : (g.y ?? 0);
+          targetY = botEvade?.jump ? Math.max(baseBotY, slot.supportY + 1.55) : baseBotY;
         }
       }
       const ky = Math.min(1, dt * 22);
@@ -1800,7 +1809,15 @@ export class World {
 
       // Obstacle collision detection + Stumble animation + 16 Hz Invulnerability Blink on TV
       const hitOb = isRunning
-        ? sim.ghostObstacleHitAt(g.lane, slot.x, slot.y, slotD, !!g.sliding, g.activeCenter, slot.supportY)
+        ? sim.ghostObstacleHitAt(
+            effectiveLane,
+            slot.x,
+            slot.y,
+            slotD,
+            effectiveSliding,
+            g.activeCenter,
+            slot.supportY,
+          )
         : null;
       const isNetStumbling = isRunning && !!g.stumbling;
       let triggeredHit = false;
@@ -1808,12 +1825,12 @@ export class World {
       if (hitOb && slot.lastHitObId !== hitOb.id) {
         slot.lastHitObId = hitOb.id;
         if (g.activeCenter === 3) {
-          this.shake = Math.max(this.shake, 0.25);
+          if (!g.isBot) this.shake = Math.max(this.shake, 0.25);
           this.fx.burst(slot.x, slot.y + 1.0, slot.z, 24, 0xfacc15, {
             speed: 6.0, up: 2.4, size: 0.55, life: 0.5, grav: 4,
           });
         } else if (g.activeCenter === 4) {
-          this.shake = Math.max(this.shake, 0.2);
+          if (!g.isBot) this.shake = Math.max(this.shake, 0.2);
           slot.blinkTimer = Math.max(slot.blinkTimer, 0.8);
           this.fx.burst(slot.x, slot.y + 1.0, slot.z, 20, 0x4ade80, {
             speed: 4.5, up: 1.8, size: 0.5, life: 0.45, grav: 2,
@@ -1829,7 +1846,7 @@ export class World {
         slot.blinkTimer = 1.5;
         slot.stumbleAnimTimer = 0.55;
         this.playGhostClip(slot, 'runlookback', 0.06, 1.8);
-        this.shake = Math.max(this.shake, g.isBot ? 0.16 : 0.34);
+        if (!g.isBot) this.shake = Math.max(this.shake, 0.34);
         this.fx.burst(slot.x, slot.y + 0.9, slot.z, 20, 0xfb7185, {
           speed: 5.0, up: 3.2, size: 0.52, life: 0.45,
         });
@@ -1859,7 +1876,7 @@ export class World {
         this.playGhostClip(slot, 'runlookback', 0.08, 1.8);
       } else if (g.activeCenter === 1) {
         this.playGhostClip(slot, 'jumpup', 0.15, 0.5);
-      } else if (g.sliding) {
+      } else if (effectiveSliding) {
         this.playGhostClip(slot, 'roll', 0.06, 1.35);
       } else if (slot.y > slot.supportY + 0.25) {
         if (vyApprox < -2.5 && slot.actions.fall) {
@@ -1875,7 +1892,7 @@ export class World {
       updateAvatarMotion(slot.charClone, this.time + i * 0.37, isRunning);
 
       const sq = slot.squash;
-      if (isRunning && g.sliding && !slot.actions.roll) {
+      if (isRunning && effectiveSliding && !slot.actions.roll) {
         slot.charClone.scale.set(0.96, 0.56, 0.96);
       } else {
         slot.charClone.scale.set(0.92 * (1 + sq * 0.4), 0.92 * (1 - sq * 0.8), 0.92 * (1 + sq * 0.4));
