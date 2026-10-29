@@ -556,4 +556,67 @@ describe('World TV Ghost 3D Elimination & Podium Grid Behavior', () => {
     expect(h3Slot.eliminatedTimer).toBeCloseTo(0.05, 4);
     expect(burstSpy.mock.calls.filter((c) => c[3] === 26 && c[4] === 0xf43f5e)).toHaveLength(1);
   });
+
+  it('hides rival ghost slots on mobile (tvMode === false) when local runner is eliminated instead of snapping rivals into the TV idle grid', () => {
+    const world = new World(makeMockCoreGltf() as any, { shadowSize: 512 });
+    const sim = new Sim(202610);
+    sim.noSpawn = true;
+    sim.reset(202610, false, 180, 1);
+    sim.start();
+    sim.update(0.1);
+    sim.drainEvents();
+
+    const makeRunner = (overrides: Partial<RunnerNetState> & { id: string; name: string }): RunnerNetState => ({
+      role: 'senior',
+      color: '#38bdf8',
+      avatar: 'non',
+      score: 800,
+      d: sim.d,
+      floor: 1,
+      coins: 5,
+      activeCenter: null,
+      collectedCount: 0,
+      lane: 1,
+      x: 0,
+      y: 0,
+      sliding: false,
+      stumbling: false,
+      isBot: false,
+      rank: 1,
+      packOffsetZ: 1.5,
+      lives: 1,
+      maxLives: 1,
+      eliminated: false,
+      survivedSec: 5,
+      ...overrides,
+    });
+
+    const runners: RunnerNetState[] = [
+      makeRunner({ id: 'me', name: 'เรา', rank: 1 }),
+      makeRunner({ id: 'rival-alive', name: 'คู่แข่ง', rank: 2, lane: 0, x: -2.4 }),
+      makeRunner({ id: 'rival-dead', name: 'คนตกแล้ว', rank: 3, lane: 2, x: 2.4, eliminated: true, lives: 0 }),
+    ];
+
+    // While local mobile runner is alive & running: rival-alive is visible, rival-dead fades out after 1.4s
+    world.sync(sim, 0.05, false, runners, 'me', false);
+    world.sync(sim, 1.5, false, runners, 'me', false);
+    const slots = (world as any).ghostSlots as any[];
+    expect(slots.find((s) => s.runnerId === 'rival-alive')?.group.visible).toBe(true);
+    expect(slots.find((s) => s.runnerId === 'rival-dead')?.group.visible).toBe(false);
+
+    // Local mobile runner crashes fatally -> sim.alive = false, sim.speed = 0 while latestRoom.phase is still RUNNING
+    sim.invulnerableT = 0;
+    sim.addOb({ kind: 'train', lane: 1, d0: sim.d + 2, d1: sim.d + 8, cars: 1 });
+    sim.update(0.35);
+    const evs = sim.drainEvents();
+    expect(sim.alive).toBe(false);
+    expect(sim.speed).toBe(0);
+
+    world.player.update(sim, 0.016, evs);
+    world.sync(sim, 0.016, false, runners, 'me', false);
+
+    expect(world.player.root.visible).toBe(true);
+    expect(world.player.current).toBe('die');
+    expect(slots.every((s) => !s.group.visible && s.runnerId === '')).toBe(true);
+  });
 });

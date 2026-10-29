@@ -1636,9 +1636,10 @@ export class World {
     tvMode: boolean,
     isRunning = true,
   ) {
-    const others = menu
-      ? []
-      : ghosts.filter((g) => tvMode || g.id !== localPlayerId).slice(0, this.ghostSlots.length);
+    const others =
+      menu || (!tvMode && (!sim.alive || !isRunning))
+        ? []
+        : ghosts.filter((g) => tvMode || g.id !== localPlayerId).slice(0, this.ghostSlots.length);
 
     if (others.length === 0) {
       for (const slot of this.ghostSlots) {
