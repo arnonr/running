@@ -5,6 +5,13 @@ import { Audio } from '../src/audio';
 import { PlayerView } from '../src/view/player';
 import { World, TV_ANCHOR_Z } from '../src/view/world';
 import { Sim } from '../src/sim/sim';
+import {
+  describeResultHeader,
+  formatHeartsPill,
+  formatTvRunnerStatus,
+  shouldCancelDeathReveal,
+  shouldStepSimInScreen,
+} from '../src/ui';
 
 describe('MatchRoomCore: Lives Authority, Early Podium, Winner Ranking & Anti-Respawn', () => {
   it('terminates RUNNING into PODIUM immediately when all humans die (ignoring bots), while bot-only rounds run full duration', () => {
@@ -618,5 +625,90 @@ describe('World TV Ghost 3D Elimination & Podium Grid Behavior', () => {
     expect(world.player.root.visible).toBe(true);
     expect(world.player.current).toBe('die');
     expect(slots.every((s) => !s.group.visible && s.runnerId === '')).toBe(true);
+  });
+});
+
+describe('Mobile HUD Hearts, Option-A Eliminated Result Copy & TV Status Formatting', () => {
+  it('formats mobile HUD hearts for 3 lives, 5 lives, and unlimited (0) mode', () => {
+    expect(formatHeartsPill(3, 3)).toBe('❤️❤️❤️ 3/3');
+    expect(formatHeartsPill(2, 3)).toBe('❤️❤️🖤 2/3');
+    expect(formatHeartsPill(0, 3)).toBe('🖤🖤🖤 0/3');
+    expect(formatHeartsPill(4, 5)).toBe('❤️❤️❤️❤️🖤 4/5');
+    expect(formatHeartsPill(0, 0)).toBe('♾️ ไม่จำกัดชีวิต');
+  });
+
+  it('formats TV Top-10 status badges for surviving humans, eliminated humans (MM:SS), unlimited mode, and bots', () => {
+    expect(formatTvRunnerStatus({ isBot: false, eliminated: false, lives: 2 }, 3)).toBe('❤️❤️🖤');
+    expect(formatTvRunnerStatus({ isBot: false, eliminated: true, lives: 0, survivedSec: 75 }, 3)).toBe('💀 ตาย 01:15');
+    expect(formatTvRunnerStatus({ isBot: false, eliminated: false, lives: 0 }, 0)).toBe('');
+    expect(formatTvRunnerStatus({ isBot: true, eliminated: false, lives: 3 }, 3)).toBe('🤖');
+  });
+
+  it('builds Option-A eliminated result header, live rank line, and next-round queue CTA vs full survival & solo modes', () => {
+    const elimBooth = describeResultHeader({
+      eliminated: true,
+      maxLives: 3,
+      survivedSec: 84,
+      rank: 2,
+      totalRunners: 5,
+      collectedCount: 4,
+      soloRun: false,
+      queuedNextRound: false,
+    });
+    expect(elimBooth.titleTh).toBe('💥 ชนครบ 3 ครั้ง! สิ้นสุดการวิ่ง');
+    expect(elimBooth.subtitleTh).toContain('อยู่รอด 01:24');
+    expect(elimBooth.subtitleTh).toContain('#2 จาก 5 คน');
+    expect(elimBooth.ctaLabelTh).toBe('⏳ เข้าคิวรอรอบถัดไป');
+    expect(elimBooth.ctaDisabled).toBe(false);
+
+    const elimQueued = describeResultHeader({
+      eliminated: true,
+      maxLives: 3,
+      survivedSec: 84,
+      rank: 1,
+      totalRunners: 5,
+      collectedCount: 4,
+      soloRun: false,
+      queuedNextRound: true,
+    });
+    expect(elimQueued.subtitleTh).toContain('#1 จาก 5 คน');
+    expect(elimQueued.ctaLabelTh).toBe('✅ อยู่ในคิวรอรอบถัดไป (รอดูผลบนจอทีวี)');
+    expect(elimQueued.ctaDisabled).toBe(true);
+
+    const survived = describeResultHeader({
+      eliminated: false,
+      maxLives: 3,
+      survivedSec: 180,
+      rank: 1,
+      totalRunners: 4,
+      collectedCount: 8,
+      soloRun: false,
+    });
+    expect(survived.titleTh).toBe('🎉 พิชิตชั้น 10 สำเร็จ!');
+
+    const soloElim = describeResultHeader({
+      eliminated: true,
+      maxLives: 3,
+      survivedSec: 42,
+      rank: 1,
+      totalRunners: 1,
+      collectedCount: 2,
+      soloRun: true,
+    });
+    expect(soloElim.ctaLabelTh).toBe('🔄 เริ่มวิ่งใหม่อีกครั้ง');
+    expect(soloElim.ctaDisabled).toBe(false);
+  });
+
+  it('keeps Sim stepping during multiplayer Pause (!soloRun) while freezing solo Pause, and cancels 1.2s death reveal only on LOBBY/COUNTDOWN reset (Review Focus #5)', () => {
+    expect(shouldStepSimInScreen('play', false)).toBe(true);
+    expect(shouldStepSimInScreen('play', true)).toBe(true);
+    expect(shouldStepSimInScreen('pause', false)).toBe(true);
+    expect(shouldStepSimInScreen('pause', true)).toBe(false);
+    expect(shouldStepSimInScreen('over', false)).toBe(false);
+
+    expect(shouldCancelDeathReveal('RUNNING', 'PODIUM')).toBe(false);
+    expect(shouldCancelDeathReveal('RUNNING', 'LOBBY')).toBe(true);
+    expect(shouldCancelDeathReveal('PODIUM', 'LOBBY')).toBe(true);
+    expect(shouldCancelDeathReveal('RUNNING', 'COUNTDOWN')).toBe(true);
   });
 });

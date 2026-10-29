@@ -5,10 +5,15 @@ import { World } from './view/world';
 import { parseGLB, fetchBuffer } from './view/assets';
 import { Audio } from './audio';
 import { bindInput, type Action } from './input';
-import { UI, type Screen } from './ui';
+import {
+  UI,
+  shouldCancelDeathReveal,
+  shouldStepSimInScreen,
+  type Screen,
+} from './ui';
 import { load, save } from './storage';
 import {
-  SPEED, DEFAULT_MATCH_DURATION, VIEW_AHEAD, CENTERS,
+  SPEED, DEFAULT_MATCH_DURATION, DEFAULT_MAX_LIVES, VIEW_AHEAD, CENTERS,
   stepTvClock, laneX,
 } from './config';
 import {
@@ -98,11 +103,31 @@ async function main() {
   let latestRoom: RoomSnapshot = net.getSnapshot();
   let hasJoinedLobby = false;
   let joinedMatchId = -1;
+  let eliminatedMatchId = -1;
   let soloRun = false;
   let state: Screen = 'start';
   let netPublishTimer = 0;
   let tvElapsed = 0;
+  let deathRevealTimer: number | null = null;
+  let lastResultEliminated = false;
+  let lastSurvivedSec = 0;
+  let queuedForNextRound = false;
   const horned = new Set<number>();
+
+  function clearDeathRevealTimer() {
+    if (deathRevealTimer !== null) {
+      window.clearTimeout(deathRevealTimer);
+      deathRevealTimer = null;
+    }
+  }
+
+  function persistRunProgress(finalScore: number) {
+    const prevBest = load<number>('bestScore', 0);
+    if (finalScore > prevBest) save('bestScore', finalScore);
+    const savedCenters = new Set<CenterId>(load<CenterId[]>('collectedCenters', []));
+    for (const c of sim.collectedCenters) savedCenters.add(c);
+    save('collectedCenters', Array.from(savedCenters));
+  }
 
   const resize = () => {
     const w = window.innerWidth, h = window.innerHeight;
@@ -134,6 +159,25 @@ async function main() {
     avatarPreview.setAuraColor(savedProfile.color);
   };
 
+  const forfeitActiveRoundIfNeeded = () => {
+    if (
+      !soloRun &&
+      !isTvMode &&
+      hasJoinedLobby &&
+      latestRoom.phase === 'RUNNING' &&
+      sim.alive &&
+      sim.maxLives > 0
+    ) {
+      eliminatedMatchId = latestRoom.matchId;
+      sim.setLives(0, sim.maxLives);
+      sim.alive = false;
+      sim.running = false;
+      publishRunnerStateNow();
+      net.join(savedProfile, { immediate: false });
+      queuedForNextRound = true;
+    }
+  };
+
   const ui = new UI(
     document.getElementById('ui')!,
     {
@@ -142,14 +186,46 @@ async function main() {
         audio.click();
         applyProfileUpdate(prof);
         ui.updatePlayerPill(savedProfile);
+        const preSnap = net.getSnapshot();
+        const alreadyEliminated =
+          !isTvMode &&
+          preSnap.phase === 'RUNNING' &&
+          (eliminatedMatchId === preSnap.matchId ||
+            preSnap.eliminatedIds.includes(savedProfile.id) ||
+            preSnap.activeRunners.some((r) => r.id === savedProfile.id && r.eliminated));
+        if (alreadyEliminated) {
+          hasJoinedLobby = true;
+          soloRun = false;
+          queuedForNextRound = true;
+          joinedMatchId = preSnap.matchId;
+          net.join(savedProfile, { immediate: false });
+          ui.setLobbyReady(true);
+          ui.toast('⏳ คุณจบการวิ่งในรอบนี้แล้ว — เข้าคิวรอรอบถัดไปเรียบร้อย!', 2600);
+          return;
+        }
         hasJoinedLobby = true;
         soloRun = false;
+        if (preSnap.phase === 'RUNNING') {
+          joinedMatchId = preSnap.matchId;
+        }
         net.join(savedProfile, { immediate: true });
         const snap = net.getSnapshot();
+        if (
+          !isTvMode &&
+          snap.phase === 'RUNNING' &&
+          (snap.eliminatedIds.includes(savedProfile.id) ||
+            snap.activeRunners.some((r) => r.id === savedProfile.id && r.eliminated))
+        ) {
+          eliminatedMatchId = snap.matchId;
+          queuedForNextRound = true;
+          ui.setLobbyReady(true);
+          ui.toast('⏳ คุณจบการวิ่งในรอบนี้แล้ว — เข้าคิวรอรอบถัดไปเรียบร้อย!', 2600);
+          return;
+        }
         if (snap.phase === 'RUNNING') {
           joinedMatchId = snap.matchId;
           const elapsed = Math.max(0, snap.matchDuration - snap.phaseTimeLeft);
-          startMatchRun(snap.matchSeed, snap.matchDuration, elapsed);
+          startMatchRun(snap.matchSeed, snap.matchDuration, elapsed, snap.maxLives);
           ui.toast(`🏁 "${savedProfile.name}" ลงสนาม CH ${currentChannel} ร่วมวิ่งกับจอทีวีแล้ว!`);
         } else if (snap.phase === 'COUNTDOWN') {
           state = 'countdown';
@@ -161,14 +237,40 @@ async function main() {
           ui.toast(`✅ เข้าสู่ Lobby (CH ${currentChannel}) ในชื่อ "${savedProfile.name}" แล้ว! รอ Admin กดปล่อยตัวบนจอทีวี`, 2600);
         }
       },
+      queueNextRound: () => {
+        audio.unlock();
+        audio.click();
+        queuedForNextRound = true;
+        hasJoinedLobby = true;
+        net.join(savedProfile, { immediate: false });
+        const snap = net.getSnapshot();
+        const myRunner = snap.activeRunners.find((r) => r.id === savedProfile.id);
+        const rank = myRunner ? myRunner.rank : 1;
+        const survivedSec =
+          lastResultEliminated && myRunner?.eliminated && myRunner.survivedSec !== undefined
+            ? myRunner.survivedSec
+            : lastSurvivedSec;
+        ui.updateResultRank({
+          rank,
+          totalRunners: snap.activeRunners.length || 1,
+          eliminated: lastResultEliminated,
+          survivedSec,
+          queuedNextRound: true,
+        });
+      },
       selectChannel: (ch) => {
         const nextCh = sanitizeChannelId(ch);
         if (nextCh === currentChannel) return;
         audio.unlock();
         audio.click();
+        clearDeathRevealTimer();
         currentChannel = nextCh;
         hasJoinedLobby = false;
         joinedMatchId = -1;
+        eliminatedMatchId = -1;
+        lastResultEliminated = false;
+        lastSurvivedSec = 0;
+        queuedForNextRound = false;
         tvElapsed = 0;
         ui.setLobbyReady(false);
         syncUrlQueryParams();
@@ -182,7 +284,7 @@ async function main() {
       profileChange: (prof) => {
         applyProfileUpdate(prof);
         if (hasJoinedLobby && !isTvMode) {
-          net.join(savedProfile, { immediate: true });
+          net.join(savedProfile, { immediate: !queuedForNextRound });
         }
       },
       editProfile: () => {
@@ -199,7 +301,7 @@ async function main() {
         applyProfileUpdate(prof);
         ui.updatePlayerPill(savedProfile);
         soloRun = true;
-        startMatchRun((Date.now() % 100000) + 1, DEFAULT_MATCH_DURATION);
+        startMatchRun((Date.now() % 100000) + 1, DEFAULT_MATCH_DURATION, 0, DEFAULT_MAX_LIVES);
       },
       selectAvatar: (avatarId, prof) => {
         audio.unlock();
@@ -211,7 +313,7 @@ async function main() {
         const meta = AVATARS[sanitizeAvatarId(savedProfile.avatar)];
         ui.toast(`${meta.icon} เลือกตัวละคร: ${meta.nameTh} (${meta.genderLabelTh})`, 1400);
         if (hasJoinedLobby && !isTvMode) {
-          net.join(savedProfile, { immediate: true });
+          net.join(savedProfile, { immediate: !queuedForNextRound });
         }
       },
       onPreviewRotate: (deltaRad) => {
@@ -234,19 +336,24 @@ async function main() {
           ui.setLobbyReady(false);
           return;
         }
-        if (state !== 'play') return;
+        if (state !== 'play' || !sim.alive || deathRevealTimer !== null) return;
         state = 'pause';
         audio.stopMusic();
+        ui.setPauseMultiplayer(!soloRun);
         ui.show('pause');
       },
       restart: () => {
         if (soloRun) {
-          startMatchRun((Date.now() % 100000) + 1, DEFAULT_MATCH_DURATION);
+          startMatchRun((Date.now() % 100000) + 1, DEFAULT_MATCH_DURATION, 0, DEFAULT_MAX_LIVES);
         } else {
+          forfeitActiveRoundIfNeeded();
           toLobby(true);
         }
       },
-      home: () => toLobby(false),
+      home: () => {
+        forfeitActiveRoundIfNeeded();
+        toLobby(false);
+      },
       toggleMute,
       hostCommand: (cmd) => {
         audio.unlock();
@@ -256,6 +363,7 @@ async function main() {
       toggleTvMode: () => {
         isTvMode = !isTvMode;
         if (isTvMode) {
+          clearDeathRevealTimer();
           hasJoinedLobby = false;
           net.leave(savedProfile.id);
         }
@@ -264,7 +372,7 @@ async function main() {
         ui.setTvMode(isTvMode);
         ui.setChannel(currentChannel);
         if (isTvMode && latestRoom.phase === 'RUNNING' && state !== 'play') {
-          startMatchRun(latestRoom.matchSeed, latestRoom.matchDuration);
+          startMatchRun(latestRoom.matchSeed, latestRoom.matchDuration, 0, latestRoom.maxLives);
         }
       },
     },
@@ -277,24 +385,58 @@ async function main() {
   // Do NOT auto-join on startup: wait until the user enters their name & presses "เข้าสู่ Lobby" (#btn-join-sync)!
   window.addEventListener('pagehide', () => {
     if (hasJoinedLobby) {
-      net.leave(savedProfile.id);
+      net.disconnect(savedProfile.id);
     }
   });
 
   function toLobby(keepReady = false) {
+    clearDeathRevealTimer();
     soloRun = false;
-    joinedMatchId = -1;
-    sim.reset(latestRoom.matchSeed, false, latestRoom.matchDuration);
+    if (latestRoom.phase === 'LOBBY' || latestRoom.phase === 'COUNTDOWN') {
+      joinedMatchId = -1;
+      eliminatedMatchId = -1;
+      queuedForNextRound = false;
+    } else {
+      joinedMatchId = latestRoom.matchId;
+    }
+    lastResultEliminated = false;
+    lastSurvivedSec = 0;
+    sim.reset(latestRoom.matchSeed, false, latestRoom.matchDuration, latestRoom.maxLives);
     world.resetScenery();
     world.fx.clear();
     audio.stopMusic();
     state = 'start';
+    ui.setPauseMultiplayer(false);
     ui.setLobbyReady(keepReady && hasJoinedLobby);
     ui.show('start');
   }
 
-  function startMatchRun(seed: number, duration: number, initialElapsed = 0) {
-    sim.reset(seed, false, duration);
+  function startMatchRun(
+    seed: number,
+    duration: number,
+    initialElapsed = 0,
+    maxLives = DEFAULT_MAX_LIVES,
+  ) {
+    clearDeathRevealTimer();
+    lastResultEliminated = false;
+    lastSurvivedSec = 0;
+    queuedForNextRound = false;
+    sim.reset(seed, false, duration, maxLives);
+    if (!soloRun && !isTvMode) {
+      const snap = net.getSnapshot();
+      const myRunner =
+        snap.activeRunners.find((r) => r.id === savedProfile.id) ??
+        latestRoom.activeRunners.find((r) => r.id === savedProfile.id);
+      if (
+        myRunner &&
+        myRunner.lives !== undefined &&
+        maxLives > 0 &&
+        myRunner.lives < maxLives &&
+        !myRunner.eliminated
+      ) {
+        sim.setLives(myRunner.lives, maxLives);
+      }
+    }
     world.resetScenery();
     world.fx.clear();
     state = 'play';
@@ -302,6 +444,7 @@ async function main() {
     if (initialElapsed > 0) {
       sim.syncToElapsed(initialElapsed);
     }
+    ui.setPauseMultiplayer(!soloRun);
     audio.startMusic();
     ui.show('play');
   }
@@ -313,17 +456,148 @@ async function main() {
 
     if (soloRun) return;
 
-    const isParticipant = isTvMode || (hasJoinedLobby && snap.activeRunners.some((r) => r.id === savedProfile.id));
+    if (shouldCancelDeathReveal(prevPhase, snap.phase)) {
+      clearDeathRevealTimer();
+    }
+
+    const myActiveRunner = snap.activeRunners.find((r) => r.id === savedProfile.id);
+    const isQueuedInSnap = snap.waitingQueue.some((w) => w.id === savedProfile.id);
+    const isEliminatedInSnap =
+      eliminatedMatchId === snap.matchId ||
+      snap.eliminatedIds.includes(savedProfile.id) ||
+      Boolean(myActiveRunner?.eliminated);
+
+    if (
+      !isTvMode &&
+      (state === 'play' || state === 'pause') &&
+      sim.alive &&
+      snap.maxLives !== sim.maxLives
+    ) {
+      sim.setLives(
+        snap.maxLives === 0
+          ? 0
+          : Math.max(1, Math.min(snap.maxLives, sim.lives || snap.maxLives)),
+        snap.maxLives,
+      );
+    } else if (
+      !isTvMode &&
+      (state === 'start' || state === 'countdown') &&
+      snap.maxLives !== sim.maxLives
+    ) {
+      sim.setLives(snap.maxLives, snap.maxLives);
+    }
+
+    if (!isTvMode && state === 'over') {
+      const rank = myActiveRunner ? myActiveRunner.rank : 1;
+      const survivedSec =
+        lastResultEliminated && myActiveRunner?.eliminated && myActiveRunner.survivedSec !== undefined
+          ? myActiveRunner.survivedSec
+          : lastSurvivedSec;
+      ui.updateResultRank({
+        rank,
+        totalRunners: snap.activeRunners.length || 1,
+        eliminated: lastResultEliminated,
+        survivedSec,
+        queuedNextRound: queuedForNextRound || isQueuedInSnap,
+      });
+    }
+
+    const isParticipant =
+      isTvMode || (hasJoinedLobby && (Boolean(myActiveRunner) || isQueuedInSnap));
     if (!isParticipant) return;
 
-    if (snap.phase === 'COUNTDOWN' && state !== 'countdown') {
+    const canRunCurrentRound =
+      isTvMode || (hasJoinedLobby && Boolean(myActiveRunner) && !isEliminatedInSnap);
+
+    if (snap.phase === 'COUNTDOWN' && state !== 'countdown' && canRunCurrentRound) {
+      clearDeathRevealTimer();
+      queuedForNextRound = false;
       state = 'countdown';
       ui.show('countdown');
       audio.countdownBeep(false);
-    } else if (snap.phase === 'RUNNING' && joinedMatchId !== snap.matchId) {
+    } else if (snap.phase === 'RUNNING' && joinedMatchId !== snap.matchId && canRunCurrentRound) {
       joinedMatchId = snap.matchId;
       audio.countdownBeep(true);
-      startMatchRun(snap.matchSeed, snap.matchDuration);
+      startMatchRun(snap.matchSeed, snap.matchDuration, 0, snap.maxLives);
+    } else if (
+      !isTvMode &&
+      snap.phase === 'RUNNING' &&
+      joinedMatchId === snap.matchId &&
+      (state === 'play' || state === 'pause') &&
+      sim.alive &&
+      deathRevealTimer === null &&
+      (snap.eliminatedIds.includes(savedProfile.id) || Boolean(myActiveRunner?.eliminated))
+    ) {
+      eliminatedMatchId = snap.matchId;
+      sim.setLives(0, sim.maxLives);
+      sim.alive = false;
+      sim.running = false;
+      lastResultEliminated = true;
+      lastSurvivedSec = myActiveRunner?.survivedSec ?? sim.survivedSec;
+      queuedForNextRound = false;
+      audio.eliminated();
+      audio.stopMusic();
+      persistRunProgress(Math.floor(sim.score));
+      state = 'over';
+      ui.result({
+        score: Math.floor(sim.score),
+        coins: sim.coins,
+        distance: Math.floor(sim.d),
+        rank: myActiveRunner?.rank ?? 1,
+        totalRunners: snap.activeRunners.length || 1,
+        collectedCenters: sim.collectedCenters,
+        soloRun: false,
+        eliminated: true,
+        maxLives: sim.maxLives > 0 ? sim.maxLives : DEFAULT_MAX_LIVES,
+        survivedSec: lastSurvivedSec,
+        queuedNextRound: false,
+      });
+      ui.show('over');
+    } else if (
+      !isTvMode &&
+      snap.phase === 'PODIUM' &&
+      (state === 'play' || state === 'pause') &&
+      sim.alive &&
+      deathRevealTimer === null &&
+      !lastResultEliminated
+    ) {
+      const serverElim =
+        snap.eliminatedIds.includes(savedProfile.id) || Boolean(myActiveRunner?.eliminated);
+      sim.running = false;
+      if (serverElim) {
+        eliminatedMatchId = snap.matchId;
+        sim.setLives(0, sim.maxLives);
+        sim.alive = false;
+        lastResultEliminated = true;
+        lastSurvivedSec = myActiveRunner?.survivedSec ?? sim.survivedSec;
+        queuedForNextRound = false;
+        audio.eliminated();
+        audio.stopMusic();
+      } else {
+        sim.finished = true;
+        lastResultEliminated = false;
+        lastSurvivedSec = sim.survivedSec;
+        queuedForNextRound = false;
+        publishRunnerStateNow();
+        audio.finishFanfare();
+        audio.stopMusic();
+      }
+      persistRunProgress(Math.floor(sim.score));
+      state = 'over';
+      ui.result({
+        score: Math.floor(sim.score),
+        coins: sim.coins,
+        distance: Math.floor(sim.d),
+        rank: myActiveRunner?.rank ?? 1,
+        totalRunners: snap.activeRunners.length || 1,
+        collectedCenters: sim.collectedCenters,
+        soloRun: false,
+        eliminated: serverElim,
+        maxLives: sim.maxLives > 0 ? sim.maxLives : DEFAULT_MAX_LIVES,
+        survivedSec: lastSurvivedSec,
+        queuedNextRound: false,
+      });
+      ui.show('over');
     } else if (snap.phase === 'LOBBY' && prevPhase !== 'LOBBY') {
       toLobby(!isTvMode);
       if (!isTvMode && (prevPhase === 'RUNNING' || prevPhase === 'COUNTDOWN')) {
@@ -356,6 +630,10 @@ async function main() {
       collectedCount: sim.collectedCenters.size,
       sliding: sim.sliding,
       stumbling: sim.stumbleSlow > 0.1 || sim.sinceStumble < 1.4,
+      lives: sim.lives,
+      maxLives: sim.maxLives,
+      eliminated: !sim.alive,
+      survivedSec: +sim.survivedSec.toFixed(2),
     });
   }
 
@@ -407,8 +685,10 @@ async function main() {
     if (state !== 'play') return;
     audio.unlock();
     if (a === 'pause') {
+      if (!sim.alive || deathRevealTimer !== null) return;
       state = 'pause';
       audio.stopMusic();
+      ui.setPauseMultiplayer(!soloRun);
       ui.show('pause');
     } else if (a === 'left') {
       sim.left();
@@ -467,17 +747,77 @@ async function main() {
       case 'hit': {
         audio.stumble();
         ui.flash('hit');
-        ui.toast(`⚠️ สะดุดสิ่งกีดขวาง -${ev.penalty} แต้ม`, 1000);
+        if (ev.lostLife && (ev.livesLeft ?? 0) > 0) {
+          ui.toast(
+            `💔 ชนสิ่งกีดขวาง! เหลือ ${ev.livesLeft}/${ev.maxLives} ชีวิต (-${ev.penalty} แต้ม)`,
+            1500,
+          );
+        } else if (!ev.lostLife) {
+          ui.toast(`⚠️ เฉี่ยวสิ่งกีดขวาง -${ev.penalty} แต้ม`, 1000);
+        }
+        break;
+      }
+      case 'eliminated': {
+        lastResultEliminated = true;
+        lastSurvivedSec = ev.survivedSec;
+        queuedForNextRound = false;
+        if (!soloRun) {
+          eliminatedMatchId = latestRoom.matchId;
+        }
+        audio.eliminated();
+        audio.stopMusic();
+        ui.flash('hit');
+        publishRunnerStateNow();
+        const shownMaxLives = sim.maxLives > 0 ? sim.maxLives : DEFAULT_MAX_LIVES;
+        ui.toast(`💥 ชนครบ ${shownMaxLives} ครั้ง! สิ้นสุดการวิ่ง`, 1800);
+        persistRunProgress(ev.score);
+
+        const elimScore = ev.score;
+        const elimCoins = ev.coins;
+        const elimDistance = ev.distance;
+        const elimSurvivedSec = ev.survivedSec;
+        const elimMaxLives = shownMaxLives;
+        const elimCenters = new Set<CenterId>(sim.collectedCenters);
+        const elimSolo = soloRun;
+
+        clearDeathRevealTimer();
+        deathRevealTimer = window.setTimeout(() => {
+          deathRevealTimer = null;
+          if (isTvMode) return;
+          const myRunner = latestRoom.activeRunners.find((r) => r.id === savedProfile.id);
+          const rank = myRunner ? myRunner.rank : 1;
+          const survivedSec =
+            !elimSolo && myRunner?.eliminated && myRunner.survivedSec !== undefined
+              ? myRunner.survivedSec
+              : elimSurvivedSec;
+          lastSurvivedSec = survivedSec;
+          state = 'over';
+          ui.result({
+            score: elimScore,
+            coins: elimCoins,
+            distance: elimDistance,
+            rank,
+            totalRunners: latestRoom.activeRunners.length || 1,
+            collectedCenters: elimCenters,
+            soloRun: elimSolo,
+            eliminated: true,
+            maxLives: elimMaxLives,
+            survivedSec,
+            queuedNextRound: queuedForNextRound,
+          });
+          ui.show('over');
+        }, 1200);
         break;
       }
       case 'finish': {
+        clearDeathRevealTimer();
+        lastResultEliminated = false;
+        lastSurvivedSec = sim.survivedSec;
+        queuedForNextRound = false;
+        publishRunnerStateNow();
         audio.finishFanfare();
         audio.stopMusic();
-        const prevBest = load<number>('bestScore', 0);
-        if (ev.score > prevBest) save('bestScore', ev.score);
-        const savedCenters = new Set<CenterId>(load<CenterId[]>('collectedCenters', []));
-        for (const c of sim.collectedCenters) savedCenters.add(c);
-        save('collectedCenters', Array.from(savedCenters));
+        persistRunProgress(ev.score);
 
         const myRunner = latestRoom.activeRunners.find((r) => r.id === savedProfile.id);
         const rank = myRunner ? myRunner.rank : 1;
@@ -490,6 +830,10 @@ async function main() {
           totalRunners: latestRoom.activeRunners.length || 1,
           collectedCenters: sim.collectedCenters,
           soloRun,
+          eliminated: false,
+          maxLives: sim.maxLives > 0 ? sim.maxLives : DEFAULT_MAX_LIVES,
+          survivedSec: sim.survivedSec,
+          queuedNextRound: false,
         });
         ui.show('over');
         break;
@@ -525,7 +869,7 @@ async function main() {
         sim.floor = tv.floor;
         sim.stageIndex = tv.stageIndex;
         sim.stageCenter = tv.stageCenter;
-        const leadHuman = latestRoom.activeRunners.find((r) => !r.isBot);
+        const leadHuman = latestRoom.activeRunners.find((r) => !r.isBot && !r.eliminated);
         if (leadHuman && leadHuman.d > 0) {
           let speedMul = 1;
           if (leadHuman.stumbling) speedMul = 0.7;
@@ -551,7 +895,7 @@ async function main() {
         sim.speed = 0;
       }
       sim.drainEvents();
-    } else if (state === 'play') {
+    } else if (shouldStepSimInScreen(state, soloRun)) {
       sim.invincible = false;
       sim.update(dt);
       netPublishTimer += dt;
@@ -574,17 +918,23 @@ async function main() {
         hasUrgentSimEvent = true;
       }
     }
-    if (state === 'play' && !soloRun && (hasUrgentSimEvent || netPublishTimer >= 0.05)) {
+    if (
+      shouldStepSimInScreen(state, soloRun) &&
+      !soloRun &&
+      sim.alive &&
+      (hasUrgentSimEvent || netPublishTimer >= 0.05)
+    ) {
       publishRunnerStateNow();
     }
 
+    const viewDt = state === 'pause' && soloRun ? 0 : dt;
     const inMenu = isTvMode ? false : state === 'start';
     if (!inMenu && !isTvMode) {
-      world.player.update(sim, state === 'pause' ? 0 : dt, events);
+      world.player.update(sim, viewDt, events);
     }
     const visibleGhosts =
       !soloRun && (isTvMode || latestRoom.phase === 'RUNNING') ? latestRoom.activeRunners : [];
-    world.sync(sim, state === 'pause' ? 0 : dt, inMenu, visibleGhosts, savedProfile.id, isTvMode);
+    world.sync(sim, viewDt, inMenu, visibleGhosts, savedProfile.id, isTvMode);
 
     audio.tempo = 112 + (sim.speed - SPEED.start) * 1.5;
 
@@ -614,6 +964,8 @@ async function main() {
         score: Math.floor(sim.score),
         coins: sim.coins,
         mult: sim.mult,
+        lives: sim.lives,
+        maxLives: sim.maxLives,
         floor: sim.floor,
         zoneNameTh: isLobbyWaiting
           ? '🟢 ประจำจุดปล่อยตัวแล้ว · รอ Admin กดเริ่มบนจอทีวี!'
@@ -659,8 +1011,23 @@ async function main() {
     tick(dt);
     requestAnimationFrame(loop);
   };
-  if (!TEST) requestAnimationFrame(loop);
-  else renderer.render(world.scene, world.camera);
+  if (!TEST) {
+    window.setInterval(() => {
+      if (
+        document.hidden &&
+        !isTvMode &&
+        !soloRun &&
+        (state === 'play' || state === 'pause') &&
+        sim.alive
+      ) {
+        last = performance.now();
+        tick(0.25, false);
+      }
+    }, 250);
+    requestAnimationFrame(loop);
+  } else {
+    renderer.render(world.scene, world.camera);
+  }
 }
 
 main().catch((e) => console.error(e));

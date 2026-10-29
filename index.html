@@ -141,6 +141,18 @@ html, body {
   text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
 }
 .score { font-size: clamp(22px, 5vw, 32px); font-weight: 900; font-variant-numeric: tabular-nums; letter-spacing: .04em; text-shadow: 0 2px 6px rgba(0,0,0,.5); }
+.hud-lives {
+  background: var(--panel); border: 1px solid rgba(251,113,133,.45); border-radius: 999px;
+  padding: 3px 10px; font-size: 13px; font-weight: 800; color: #fecdd3;
+  font-variant-numeric: tabular-nums; transition: transform .18s;
+}
+.hud-lives.unlimited { border-color: rgba(56,189,248,.45); color: #bae6fd; }
+.hud-lives.pulse { animation: heartPulse .36s ease-out; }
+@keyframes heartPulse {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.24); }
+  100% { transform: scale(1); }
+}
 .hud-row { display: flex; gap: 6px; align-items: center; }
 .mult, .coins {
   background: var(--panel); border: 1px solid var(--line); border-radius: 11px;
@@ -387,6 +399,7 @@ html, body {
   box-shadow: 0 4px 0 #b45309;
 }
 .big:active { transform: translateY(2px); }
+.big:disabled { opacity: .82; cursor: default; transform: none; }
 .ghost {
   border: 1px solid var(--line); border-radius: 12px; padding: 10px; font-size: 14px;
   font-weight: 700; background: rgba(255,255,255,.05); color: #e2e8f0; cursor: pointer;
@@ -471,6 +484,11 @@ html, body {
   padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line);
   background: rgba(255,255,255,.07); color: #fff; font-size: 12px; font-weight: 800; cursor: pointer;
 }
+.tv-btn.on {
+  background: linear-gradient(135deg, rgba(56,189,248,.3), rgba(37,99,235,.28));
+  border-color: var(--gold); color: var(--gold);
+  box-shadow: 0 0 10px rgba(250,204,21,.25);
+}
 .tv-btn.primary { background: linear-gradient(135deg, #22c55e, #16a34a); border-color: #4ade80; grid-column: span 2; font-size: 14px; padding: 10px; }
 .tv-right-col {
   width: 340px; display: flex; flex-direction: column; gap: 10px; max-height: calc(100vh - 130px);
@@ -482,9 +500,12 @@ html, body {
   border-radius: 10px; background: rgba(30,41,59,.75); font-size: 13px;
 }
 .tv-lb-row.top1 { background: linear-gradient(90deg, rgba(250,204,21,.28), rgba(30,41,59,.85)); border: 1px solid rgba(250,204,21,.5); }
+.tv-lb-row.eliminated { background: rgba(127,29,29,.35); border: 1px solid rgba(251,113,133,.3); opacity: .78; }
+.tv-lb-row.eliminated .tv-lb-name { text-decoration: line-through; color: #fca5a5; }
 .tv-lb-rank { width: 24px; font-weight: 900; color: var(--gold); }
 .tv-lb-dot { width: 10px; height: 10px; border-radius: 50%; }
 .tv-lb-name { flex: 1; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tv-lb-status { font-size: 11.5px; font-weight: 800; white-space: nowrap; color: #fecdd3; }
 .tv-lb-score { font-weight: 900; font-variant-numeric: tabular-nums; color: #f8fafc; }
 
 /* Corner Mode Switcher (Desktop only; hidden on mobile/touch so it never blocks controls) */

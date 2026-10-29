@@ -1,12 +1,12 @@
 import {
-  GAME_TITLE, CENTERS, CENTER_LIST, POWER_DURATION,
+  GAME_TITLE, CENTERS, CENTER_LIST, POWER_DURATION, DEFAULT_MAX_LIVES,
   type CenterMeta,
 } from './config';
 import type { CenterId } from './sim/types';
 import {
   AVATAR_COLORS, ROLE_LABELS, sanitizeNickname,
   CHANNEL_LIST, sanitizeChannelId,
-  type PlayerProfile, type PlayerRole, type RoomSnapshot, type HostCommand, type ChannelId,
+  type PlayerProfile, type PlayerRole, type RoomSnapshot, type RunnerNetState, type HostCommand, type ChannelId,
 } from './net';
 import {
   AVATARS, AVATAR_LIST, sanitizeAvatarId, type AvatarId,
@@ -15,6 +15,109 @@ import type { AvatarPortraits } from './view/avatarPreview';
 import { buildJoinQrSvg, resolveMobileJoinUrl } from './qr';
 
 export type Screen = 'start' | 'countdown' | 'play' | 'pause' | 'over';
+
+function formatSurvivedMMSS(sec: number): string {
+  const safe = Number.isFinite(sec) ? sec : 0;
+  const s = Math.max(0, Math.floor(safe));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`;
+}
+
+export function formatHeartsPill(lives: number, maxLives: number): string {
+  if (!Number.isFinite(maxLives) || maxLives <= 0) {
+    return '♾️ ไม่จำกัดชีวิต';
+  }
+  const total = Math.max(1, Math.floor(maxLives));
+  const rem = Math.max(0, Math.min(total, Math.floor(Number.isFinite(lives) ? lives : total)));
+  return `${'❤️'.repeat(rem)}${'🖤'.repeat(total - rem)} ${rem}/${total}`;
+}
+
+export function formatTvRunnerStatus(
+  runner: Pick<RunnerNetState, 'isBot' | 'eliminated' | 'lives' | 'survivedSec'>,
+  roomMaxLives: number,
+): string {
+  if (runner.isBot) return '🤖';
+  if (runner.eliminated) {
+    return `💀 ตาย ${formatSurvivedMMSS(runner.survivedSec ?? 0)}`;
+  }
+  if (!Number.isFinite(roomMaxLives) || roomMaxLives <= 0) {
+    return '';
+  }
+  const total = Math.max(1, Math.floor(roomMaxLives));
+  const rem = Math.max(0, Math.min(total, Math.floor(runner.lives ?? total)));
+  return `${'❤️'.repeat(rem)}${'🖤'.repeat(total - rem)}`;
+}
+
+export function describeResultHeader(opts: {
+  eliminated: boolean;
+  maxLives: number;
+  survivedSec: number;
+  rank: number;
+  totalRunners: number;
+  collectedCount: number;
+  soloRun?: boolean;
+  queuedNextRound?: boolean;
+}): {
+  titleTh: string;
+  subtitleTh: string;
+  ctaLabelTh: string;
+  ctaDisabled: boolean;
+} {
+  const shownMax = opts.maxLives > 0 ? Math.floor(opts.maxLives) : DEFAULT_MAX_LIVES;
+  const total = Math.max(1, opts.totalRunners);
+  const survivedText = formatSurvivedMMSS(opts.survivedSec);
+  const titleTh = opts.eliminated
+    ? `💥 ชนครบ ${shownMax} ครั้ง! สิ้นสุดการวิ่ง`
+    : '🎉 พิชิตชั้น 10 สำเร็จ!';
+
+  let subtitleTh: string;
+  if (opts.soloRun) {
+    subtitleTh = opts.eliminated
+      ? `โหมดวิ่งเดี่ยว · อยู่รอด ${survivedText} · สะสม ${opts.collectedCount} / 9 ศูนย์วิจัย`
+      : `โหมดวิ่งเดี่ยว · สะสมครบ ${opts.collectedCount} / 9 ศูนย์วิจัย`;
+  } else {
+    subtitleTh = opts.eliminated
+      ? `อยู่รอด ${survivedText} · อันดับปัจจุบัน: #${opts.rank} จาก ${total} คน`
+      : `อันดับของคุณในรอบนี้: #${opts.rank} จาก ${total} คน`;
+  }
+
+  if (opts.soloRun) {
+    return {
+      titleTh,
+      subtitleTh,
+      ctaLabelTh: '🔄 เริ่มวิ่งใหม่อีกครั้ง',
+      ctaDisabled: false,
+    };
+  }
+
+  if (opts.queuedNextRound) {
+    return {
+      titleTh,
+      subtitleTh,
+      ctaLabelTh: '✅ อยู่ในคิวรอรอบถัดไป (รอดูผลบนจอทีวี)',
+      ctaDisabled: true,
+    };
+  }
+
+  return {
+    titleTh,
+    subtitleTh,
+    ctaLabelTh: '⏳ เข้าคิวรอรอบถัดไป',
+    ctaDisabled: false,
+  };
+}
+
+export function shouldStepSimInScreen(screen: Screen, soloRun: boolean): boolean {
+  return screen === 'play' || (screen === 'pause' && !soloRun);
+}
+
+export function shouldCancelDeathReveal(
+  prevPhase: RoomSnapshot['phase'],
+  nextPhase: RoomSnapshot['phase'],
+): boolean {
+  return (nextPhase === 'LOBBY' || nextPhase === 'COUNTDOWN') && nextPhase !== prevPhase;
+}
 
 export interface AvatarShowcaseViewModel {
   avatarId: AvatarId;
@@ -85,6 +188,7 @@ export function groupCentersByExhibitionFloor(collected: Iterable<CenterId>): Ex
 export interface UIHandlers {
   joinQueue(profile: PlayerProfile): void;
   playSoloNow(profile: PlayerProfile): void;
+  queueNextRound?(): void;
   selectAvatar?(avatarId: AvatarId, profile: PlayerProfile): void;
   onPreviewRotate?(deltaRad: number): void;
   onPreviewTap?(): void;
@@ -115,6 +219,13 @@ export class UI {
   private hintTimer = 0;
   private toastTimer = 0;
   private holoTimer = 0;
+  private livesPulseTimer = 0;
+  private lastHudLives: number | null = null;
+  private lastHudMaxLives: number | null = null;
+  private latestRoomPhase: RoomSnapshot['phase'] = 'LOBBY';
+  private lastResultSoloRun = false;
+  private lastResultMaxLives = DEFAULT_MAX_LIVES;
+  private lastResultCollectedCount = 0;
   private profile: PlayerProfile;
   private tvMode = false;
   private lobbyReady = false;
@@ -208,6 +319,7 @@ export class UI {
 
         <div class="hud-right">
           <div class="score" id="score">000000</div>
+          <div class="hud-lives" id="hud-lives">❤️❤️❤️ 3/3</div>
           <div class="hud-row">
             <span class="mult" id="mult">×1</span>
             <span class="coins"><span class="coin-ico"></span><b id="coins">0</b></span>
@@ -336,6 +448,7 @@ export class UI {
       <section class="screen pause" id="s-pause">
         <div class="panel">
           <h2>พักการวิ่งชั่วคราว</h2>
+          <p class="sub-th" id="pause-note" style="display:none;color:#fde047"></p>
           <button class="big" id="btn-resume">วิ่งต่อเลย</button>
           <button class="ghost" id="btn-restart">เริ่มรอบใหม่</button>
           <button class="ghost" id="btn-home">กลับหน้าล็อบบี้</button>
@@ -345,7 +458,7 @@ export class UI {
       <!-- Result + Smart Wayfinding Screen -->
       <section class="screen over" id="s-over">
         <div class="panel">
-          <h2>🎉 พิชิตชั้น 10 สำเร็จ!</h2>
+          <h2 id="r-title">🎉 พิชิตชั้น 10 สำเร็จ!</h2>
           <p class="sub-th" id="r-rank-line">อันดับของคุณในรอบนี้: #1</p>
 
           <div class="result-grid">
@@ -404,6 +517,11 @@ export class UI {
                   <button class="tv-btn" id="tv-btn-dur180">⏱️ 3 นาที (180s)</button>
                   <button class="tv-btn" id="tv-btn-dur120">⏱️ 2 นาที (120s)</button>
                   <button class="tv-btn" id="tv-btn-dur90">⏱️ 1.5 นาที (90s)</button>
+                </div>
+                <div style="grid-column:span 2;display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
+                  <button class="tv-btn" id="tv-btn-lives3">❤️ 3 ชีวิต</button>
+                  <button class="tv-btn" id="tv-btn-lives5">❤️ 5 ชีวิต</button>
+                  <button class="tv-btn" id="tv-btn-lives0">♾️ ไม่ตาย</button>
                 </div>
               </div>
             </div>
@@ -578,7 +696,17 @@ export class UI {
     tap('btn-restart', () => this.handlers.restart());
     tap('btn-home', () => this.handlers.home());
     tap('btn-home2', () => this.handlers.home());
-    tap('btn-again', () => this.handlers.restart());
+    tap('btn-again', () => {
+      if (
+        !this.lastResultSoloRun &&
+        (this.latestRoomPhase === 'RUNNING' || this.latestRoomPhase === 'PODIUM') &&
+        this.handlers.queueNextRound
+      ) {
+        this.handlers.queueNextRound();
+      } else {
+        this.handlers.restart();
+      }
+    });
     tap('btn-mode-switch', () => this.handlers.toggleTvMode());
 
     // TV Host Controls
@@ -590,6 +718,9 @@ export class UI {
     tap('tv-btn-dur180', () => this.handlers.hostCommand({ action: 'set_duration', duration: 180 }));
     tap('tv-btn-dur120', () => this.handlers.hostCommand({ action: 'set_duration', duration: 120 }));
     tap('tv-btn-dur90', () => this.handlers.hostCommand({ action: 'set_duration', duration: 90 }));
+    tap('tv-btn-lives3', () => this.handlers.hostCommand({ action: 'set_max_lives', maxLives: 3 }));
+    tap('tv-btn-lives5', () => this.handlers.hostCommand({ action: 'set_max_lives', maxLives: 5 }));
+    tap('tv-btn-lives0', () => this.handlers.hostCommand({ action: 'set_max_lives', maxLives: 0 }));
 
     for (const b of this.root.querySelectorAll('button, input')) {
       b.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -747,7 +878,11 @@ export class UI {
   }
 
   updateRoomSnapshot(snap: RoomSnapshot, localPlayerId: string) {
+    this.latestRoomPhase = snap.phase;
     const isQueued = snap.waitingQueue.some((p) => p.id === localPlayerId);
+    const isEliminatedThisRound =
+      snap.eliminatedIds.includes(localPlayerId) ||
+      snap.activeRunners.some((r) => r.id === localPlayerId && r.eliminated);
     const phaseLabel: Record<RoomSnapshot['phase'], string> = {
       LOBBY: `🟢 ห้องรอปล่อยตัว CH ${this.channel} (รอ Admin กดเริ่มบนทีวี)`,
       COUNTDOWN: `🟡 CH ${this.channel} · กำลังนับถอยหลังปล่อยตัว!`,
@@ -761,13 +896,25 @@ export class UI {
 
     if (this.el['ls-desc']) {
       if (snap.phase === 'RUNNING') {
-        this.el['ls-desc'].textContent = isQueued
-          ? `คุณอยู่ในคิวรอบถัดไป (#${snap.matchId + 1}) · รอบปัจจุบันอยู่ชั้น ${snap.currentFloor}/10 เหลือเวลา ${this.formatMMSS(snap.phaseTimeLeft)}`
-          : `รอบปัจจุบันกำลังวิ่งอยู่ที่ชั้น ${snap.currentFloor}/10 · กดปุ่มสีทองเพื่อลงสนามร่วมวิ่งทันที!`;
+        if (isEliminatedThisRound) {
+          this.el['ls-desc'].textContent = `คุณจบการวิ่งในรอบนี้แล้ว · อยู่ในคิวรอรอบถัดไป (#${snap.matchId + 1}) · รอบปัจจุบันอยู่ชั้น ${snap.currentFloor}/10 เหลือเวลา ${this.formatMMSS(snap.phaseTimeLeft)}`;
+        } else if (isQueued) {
+          this.el['ls-desc'].textContent = `คุณอยู่ในคิวรอบถัดไป (#${snap.matchId + 1}) · รอบปัจจุบันอยู่ชั้น ${snap.currentFloor}/10 เหลือเวลา ${this.formatMMSS(snap.phaseTimeLeft)}`;
+        } else {
+          this.el['ls-desc'].textContent = `รอบปัจจุบันกำลังวิ่งอยู่ที่ชั้น ${snap.currentFloor}/10 · กดปุ่มสีทองเพื่อลงสนามร่วมวิ่งทันที!`;
+        }
       } else {
         this.el['ls-desc'].textContent = `มีผู้เล่นพร้อมในห้อง ${snap.activeRunners.length} คน · กดปุ่มสีทองเพื่อเข้าจุดปล่อยตัว แล้วรอ Admin กดเริ่มรอบบนจอทีวี!`;
       }
     }
+
+    // Update TV Live Arena preset active states
+    this.el['tv-btn-dur180']?.classList.toggle('on', snap.matchDuration === 180);
+    this.el['tv-btn-dur120']?.classList.toggle('on', snap.matchDuration === 120);
+    this.el['tv-btn-dur90']?.classList.toggle('on', snap.matchDuration === 90);
+    this.el['tv-btn-lives3']?.classList.toggle('on', snap.maxLives === 3);
+    this.el['tv-btn-lives5']?.classList.toggle('on', snap.maxLives === 5);
+    this.el['tv-btn-lives0']?.classList.toggle('on', snap.maxLives === 0);
 
     // Update TV Live Arena
     if (this.el['tv-phase']) {
@@ -779,8 +926,13 @@ export class UI {
     }
     if (this.el['tv-active-count']) {
       const botCount = snap.activeRunners.filter((r) => r.isBot).length;
-      const humanCount = snap.activeRunners.length - botCount;
-      this.el['tv-active-count'].textContent = `${snap.activeRunners.length} คน (ผู้เล่น ${humanCount} · บอท ${botCount})`;
+      const humanRunners = snap.activeRunners.filter((r) => !r.isBot);
+      const humanCount = humanRunners.length;
+      const aliveHumans = humanRunners.filter((r) => !r.eliminated).length;
+      this.el['tv-active-count'].textContent =
+        humanCount > 0 && snap.maxLives > 0
+          ? `ผู้เล่นรอด ${aliveHumans}/${humanCount} คน · บอท ${botCount}`
+          : `${snap.activeRunners.length} คน (ผู้เล่น ${humanCount} · บอท ${botCount})`;
       if (this.el['tv-btn-bot-clear']) {
         if (botCount > 0) {
           this.el['tv-btn-bot-clear'].textContent = `🤖 ล้างบอท (${botCount})`;
@@ -800,17 +952,19 @@ export class UI {
       while (lbList.children.length < rows.length) {
         const rowEl = document.createElement('div');
         rowEl.className = 'tv-lb-row';
-        rowEl.innerHTML = `<span class="tv-lb-rank"></span><span class="tv-lb-dot"></span><span class="tv-lb-name"></span><span class="tv-lb-score"></span>`;
+        rowEl.innerHTML = `<span class="tv-lb-rank"></span><span class="tv-lb-dot"></span><span class="tv-lb-name"></span><span class="tv-lb-status"></span><span class="tv-lb-score"></span>`;
         lbList.appendChild(rowEl);
       }
       for (let i = 0; i < rows.length; i++) {
         const r = rows[i];
         const rowEl = lbList.children[i] as HTMLElement;
         rowEl.classList.toggle('top1', i === 0);
+        rowEl.classList.toggle('eliminated', !!r.eliminated);
         const rankEl = rowEl.children[0] as HTMLElement;
         const dotEl = rowEl.children[1] as HTMLElement;
         const nameEl = rowEl.children[2] as HTMLElement;
-        const scoreEl = rowEl.children[3] as HTMLElement;
+        const statusEl = rowEl.children[3] as HTMLElement;
+        const scoreEl = rowEl.children[4] as HTMLElement;
         const rankText = `#${r.rank}`;
         if (rankEl.textContent !== rankText) rankEl.textContent = rankText;
         if (dotEl.style.background !== r.color) dotEl.style.background = r.color;
@@ -819,6 +973,8 @@ export class UI {
         const prefix = r.name.includes(avIcon) ? '' : `${avIcon} `;
         const nameText = `${prefix}${r.name} (${ROLE_LABELS[r.role]}) ${cIcon}`.trim();
         if (nameEl.textContent !== nameText) nameEl.textContent = nameText;
+        const statusText = formatTvRunnerStatus(r, snap.maxLives);
+        if (statusEl.textContent !== statusText) statusEl.textContent = statusText;
         const scoreText = r.score.toLocaleString();
         if (scoreEl.textContent !== scoreText) scoreEl.textContent = scoreText;
       }
@@ -844,6 +1000,8 @@ export class UI {
     score: number;
     coins: number;
     mult: number;
+    lives: number;
+    maxLives: number;
     floor: number;
     zoneNameTh: string;
     timeLeft: number;
@@ -857,6 +1015,28 @@ export class UI {
     soloRun?: boolean;
   }) {
     this.el.score.textContent = String(opts.score).padStart(6, '0');
+    const livesEl = this.el['hud-lives'];
+    if (livesEl) {
+      const pillText = formatHeartsPill(opts.lives, opts.maxLives);
+      if (livesEl.textContent !== pillText) {
+        livesEl.textContent = pillText;
+      }
+      livesEl.classList.toggle('unlimited', opts.maxLives <= 0);
+      if (
+        opts.maxLives > 0 &&
+        this.lastHudMaxLives === opts.maxLives &&
+        this.lastHudLives !== null &&
+        opts.lives < this.lastHudLives
+      ) {
+        window.clearTimeout(this.livesPulseTimer);
+        livesEl.classList.remove('pulse');
+        void livesEl.offsetWidth;
+        livesEl.classList.add('pulse');
+        this.livesPulseTimer = window.setTimeout(() => livesEl.classList.remove('pulse'), 380);
+      }
+      this.lastHudLives = opts.lives;
+      this.lastHudMaxLives = opts.maxLives;
+    }
     this.el.coins.textContent = String(opts.coins);
     this.el.mult.textContent = '×' + opts.mult;
     this.el.mult.classList.toggle('hot', opts.mult > 1);
@@ -928,6 +1108,22 @@ export class UI {
     e.className = 'flash ' + kind;
   }
 
+  setPauseMultiplayer(liveMultiplayer: boolean): void {
+    const noteEl = this.el['pause-note'];
+    if (noteEl) {
+      noteEl.textContent = liveMultiplayer
+        ? '⚠️ โหมดแข่งพร้อมจอทีวี: ตัวละครยังวิ่งต่อแบบสด!'
+        : '';
+      noteEl.style.display = liveMultiplayer ? '' : 'none';
+    }
+    const restartBtn = this.el['btn-restart'];
+    if (restartBtn) {
+      restartBtn.textContent = liveMultiplayer
+        ? '🏳️ ออกจากการแข่งรอบนี้ (รอรอบถัดไป)'
+        : 'เริ่มรอบใหม่';
+    }
+  }
+
   result(r: {
     score: number;
     coins: number;
@@ -936,10 +1132,31 @@ export class UI {
     totalRunners: number;
     collectedCenters: Set<CenterId>;
     soloRun?: boolean;
+    eliminated?: boolean;
+    maxLives?: number;
+    survivedSec?: number;
+    queuedNextRound?: boolean;
   }) {
-    this.el['r-rank-line'].textContent = r.soloRun
-      ? `โหมดวิ่งเดี่ยว · สะสมครบ ${r.collectedCenters.size} / 9 ศูนย์วิจัย`
-      : `อันดับของคุณในรอบนี้: #${r.rank} จาก ${Math.max(1, r.totalRunners)} คน`;
+    this.lastResultSoloRun = !!r.soloRun;
+    this.lastResultMaxLives = r.maxLives ?? DEFAULT_MAX_LIVES;
+    this.lastResultCollectedCount = r.collectedCenters.size;
+    const hdr = describeResultHeader({
+      eliminated: !!r.eliminated,
+      maxLives: this.lastResultMaxLives,
+      survivedSec: r.survivedSec ?? 0,
+      rank: r.rank,
+      totalRunners: r.totalRunners,
+      collectedCount: this.lastResultCollectedCount,
+      soloRun: this.lastResultSoloRun,
+      queuedNextRound: !!r.queuedNextRound,
+    });
+    if (this.el['r-title']) this.el['r-title'].textContent = hdr.titleTh;
+    if (this.el['r-rank-line']) this.el['r-rank-line'].textContent = hdr.subtitleTh;
+    const againBtn = this.el['btn-again'] as HTMLButtonElement | undefined;
+    if (againBtn) {
+      againBtn.textContent = hdr.ctaLabelTh;
+      againBtn.disabled = hdr.ctaDisabled;
+    }
     this.el['r-score'].textContent = r.score.toLocaleString();
     this.el['r-coins'].textContent = String(r.coins);
     this.el['r-dist'].textContent = `${r.distance} m`;
@@ -962,5 +1179,31 @@ export class UI {
         </div>`,
       )
       .join('');
+  }
+
+  updateResultRank(opts: {
+    rank: number;
+    totalRunners: number;
+    eliminated: boolean;
+    survivedSec: number;
+    queuedNextRound: boolean;
+  }): void {
+    const hdr = describeResultHeader({
+      eliminated: opts.eliminated,
+      maxLives: this.lastResultMaxLives,
+      survivedSec: opts.survivedSec,
+      rank: opts.rank,
+      totalRunners: opts.totalRunners,
+      collectedCount: this.lastResultCollectedCount,
+      soloRun: this.lastResultSoloRun,
+      queuedNextRound: opts.queuedNextRound,
+    });
+    if (this.el['r-title']) this.el['r-title'].textContent = hdr.titleTh;
+    if (this.el['r-rank-line']) this.el['r-rank-line'].textContent = hdr.subtitleTh;
+    const againBtn = this.el['btn-again'] as HTMLButtonElement | undefined;
+    if (againBtn) {
+      againBtn.textContent = hdr.ctaLabelTh;
+      againBtn.disabled = hdr.ctaDisabled;
+    }
   }
 }
