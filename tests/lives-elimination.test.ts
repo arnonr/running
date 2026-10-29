@@ -207,4 +207,105 @@ describe('MatchRoomCore: Lives Authority, Early Podium, Winner Ranking & Anti-Re
 
     netLobbyDisconnect.destroy();
   });
+
+  it('queues brand-new QR joiners during PODIUM for next round instead of hijacking Rank #1 with 0 score, while allowing existing podium runners to update metadata', () => {
+    // Case A: Early-terminated mixed round on PODIUM (all humans eliminated)
+    const room = new MatchRoomCore('1');
+    room.addDemoBots(2);
+    room.join({ id: 'h1', name: 'แชมป์รอบนี้', role: 'senior', color: '#38bdf8' }, { immediate: true });
+    room.hostCommand({ action: 'start_now' });
+    room.tick(3.5);
+    room.tick(45);
+    room.updateRunnerState('h1', { score: 3200, d: 600, lives: 0, eliminated: true });
+    room.tick(0.1);
+    expect(room.phase).toBe('PODIUM');
+    expect(room.getSnapshot().top10[0].id).toBe('h1');
+
+    // Brand-new spectator scans QR during PODIUM (NetClient defaults immediate: true)
+    const podJoin = room.join(
+      { id: 'qr-spectator', name: 'ผู้ชมเพิ่งสแกน', role: 'public', color: '#f59e0b' },
+      { immediate: true },
+    );
+    expect(podJoin.queuedForNextRound).toBe(true);
+    const podSnap = room.getSnapshot();
+    expect(podSnap.top10[0].id).toBe('h1');
+    expect(podSnap.activeRunners.some((r) => r.id === 'qr-spectator')).toBe(false);
+    expect(podSnap.waitingQueue.some((w) => w.id === 'qr-spectator')).toBe(true);
+
+    // Case B: Bot-only or surviving-human round reaching PODIUM by timer expiry
+    const survRoom = new MatchRoomCore('2');
+    survRoom.addDemoBots(2);
+    survRoom.join({ id: 'winner', name: 'ผู้ชนะ', role: 'uni', color: '#22c55e' }, { immediate: true });
+    survRoom.hostCommand({ action: 'start_now' });
+    survRoom.tick(3.5);
+    survRoom.updateRunnerState('winner', { score: 8800, d: 2900, lives: 2, eliminated: false });
+    survRoom.tick(180);
+    expect(survRoom.phase).toBe('PODIUM');
+
+    // Existing survivor updating profile metadata during PODIUM keeps score and stays active
+    const metaJoin = survRoom.join(
+      { id: 'winner', name: 'ผู้ชนะ ตัวจริง', role: 'uni', color: '#22c55e' },
+      { immediate: true },
+    );
+    expect(metaJoin.queuedForNextRound).toBe(false);
+    expect(survRoom.getSnapshot().top10[0].name).toBe('ผู้ชนะ ตัวจริง');
+    expect(survRoom.getSnapshot().top10[0].score).toBe(8800);
+
+    // Brand-new joiner on bot/survivor PODIUM also queues in waitingQueue and promotes on enterLobby
+    const newOnSurvPodium = survRoom.join(
+      { id: 'newcomer-2', name: 'มาใหม่', role: 'junior', color: '#ec4899' },
+      { immediate: true },
+    );
+    expect(newOnSurvPodium.queuedForNextRound).toBe(true);
+    expect(survRoom.getSnapshot().activeRunners.some((r) => r.id === 'newcomer-2')).toBe(false);
+
+    survRoom.tick(15.5);
+    expect(survRoom.phase).toBe('LOBBY');
+    expect(survRoom.getSnapshot().activeRunners.some((r) => r.id === 'newcomer-2')).toBe(true);
+  });
+
+  it('ignores trailing life/elimination packets outside RUNNING and keeps PODIUM scores/survival immutable', () => {
+    const room = new MatchRoomCore('1');
+    room.join({ id: 'champ', name: 'แชมป์รอด', role: 'uni', color: '#22c55e' }, { immediate: true });
+    room.join({ id: 'runner2', name: 'ที่สอง', role: 'senior', color: '#38bdf8' }, { immediate: true });
+
+    // Trailing elimination packet in LOBBY must not eliminate or poison roundLives/eliminatedIds
+    room.updateRunnerState('champ', { lives: 0, eliminated: true, survivedSec: 12 });
+    let snap = room.getSnapshot();
+    expect(snap.eliminatedIds).toHaveLength(0);
+    expect(snap.activeRunners.find((r) => r.id === 'champ')?.eliminated).toBe(false);
+    expect(snap.activeRunners.find((r) => r.id === 'champ')?.lives).toBe(3);
+
+    // Trailing elimination packet in COUNTDOWN must not poison eliminatedIds
+    room.hostCommand({ action: 'start_now' });
+    expect(room.phase).toBe('COUNTDOWN');
+    room.updateRunnerState('champ', { lives: 0, eliminated: true, survivedSec: 5 });
+    expect(room.getSnapshot().eliminatedIds).toHaveLength(0);
+    expect(room.getSnapshot().activeRunners.find((r) => r.id === 'champ')?.eliminated).toBe(false);
+
+    // Enter RUNNING: runner2 dies at 40s, champ survives full 180s into PODIUM
+    room.tick(3.5);
+    room.tick(40);
+    room.updateRunnerState('runner2', { score: 4000, d: 650, lives: 0, eliminated: true });
+    room.updateRunnerState('champ', { score: 7500, d: 2800, lives: 2, eliminated: false });
+    room.tick(140.5);
+    expect(room.phase).toBe('PODIUM');
+
+    // Late in-flight packet arriving during PODIUM cannot eliminate champ or mutate finalized PODIUM score/d
+    room.updateRunnerState('champ', {
+      name: 'แชมป์รอด 10 ชั้น',
+      score: 10,
+      d: 5,
+      lives: 0,
+      eliminated: true,
+      survivedSec: 1,
+    });
+    snap = room.getSnapshot();
+    expect(snap.top10[0].id).toBe('champ');
+    expect(snap.top10[0].name).toBe('แชมป์รอด 10 ชั้น');
+    expect(snap.top10[0].eliminated).toBe(false);
+    expect(snap.top10[0].lives).toBe(2);
+    expect(snap.top10[0].score).toBe(7500);
+    expect(snap.top10[0].d).toBe(2800);
+  });
 });

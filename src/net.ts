@@ -208,7 +208,7 @@ export class MatchRoomCore {
 
     const forceImmediate = !!options?.immediate;
 
-    if (this.phase === 'LOBBY' || forceImmediate) {
+    if (this.phase === 'LOBBY' || (forceImmediate && this.phase !== 'PODIUM')) {
       this.waitingMap.delete(cleanProfile.id);
       const existing = this.activeMap.get(cleanProfile.id);
       const joinMidRun = this.phase === 'RUNNING' && !existing;
@@ -343,7 +343,7 @@ export class MatchRoomCore {
     if (state.color !== undefined) r.color = state.color;
     if (state.avatar !== undefined) r.avatar = sanitizeAvatarId(state.avatar);
 
-    if (r.eliminated) {
+    if (r.eliminated || this.phase === 'PODIUM') {
       return;
     }
 
@@ -358,26 +358,29 @@ export class MatchRoomCore {
     if (state.collectedCount !== undefined) r.collectedCount = state.collectedCount;
     if (state.sliding !== undefined) r.sliding = state.sliding;
     if (state.stumbling !== undefined) r.stumbling = state.stumbling;
-    if (state.survivedSec !== undefined && Number.isFinite(state.survivedSec)) {
-      r.survivedSec = +Math.max(0, state.survivedSec).toFixed(2);
-    }
-    if (state.lives !== undefined) {
-      if (this.maxLives > 0) {
-        const clamped = Math.max(0, Math.min(this.maxLives, Math.floor(state.lives)));
-        r.lives = clamped;
-        this.roundLives.set(id, clamped);
-      } else {
-        r.lives = 0;
-      }
-    }
-    r.maxLives = this.maxLives;
 
-    if (
-      !r.isBot &&
-      (state.eliminated === true ||
-        (this.maxLives > 0 && state.lives !== undefined && state.lives <= 0))
-    ) {
-      this.eliminateRunner(id, state.survivedSec);
+    if (this.phase === 'RUNNING') {
+      if (state.survivedSec !== undefined && Number.isFinite(state.survivedSec)) {
+        r.survivedSec = +Math.max(0, state.survivedSec).toFixed(2);
+      }
+      if (state.lives !== undefined) {
+        if (this.maxLives > 0) {
+          const clamped = Math.max(0, Math.min(this.maxLives, Math.floor(state.lives)));
+          r.lives = clamped;
+          this.roundLives.set(id, clamped);
+        } else {
+          r.lives = 0;
+        }
+      }
+      r.maxLives = this.maxLives;
+
+      if (
+        !r.isBot &&
+        (state.eliminated === true ||
+          (this.maxLives > 0 && state.lives !== undefined && state.lives <= 0))
+      ) {
+        this.eliminateRunner(id, state.survivedSec);
+      }
     }
   }
 
