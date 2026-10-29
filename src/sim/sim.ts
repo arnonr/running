@@ -1,7 +1,7 @@
 // The game rules, with no three.js in it: the runner, obstacles, coins, 9-Center power-ups, 180s timer, and score.
 import {
   PLAYER, GRAVITY, JUMP_V, SUPER_JUMP_V, OB, laneX, speedAtProgress, MAGNET_RANGE, VIEW_AHEAD, LANE_COUNT,
-  trainLength, moverFront, moverSpan, DEFAULT_MATCH_DURATION, POWER_DURATION, PICKUP_PULL_RANGE,
+  trainLength, moverFront, moverSpan, DEFAULT_MATCH_DURATION, DEFAULT_MAX_LIVES, POWER_DURATION, PICKUP_PULL_RANGE,
   floorAtProgress, zoneAtProgress, baseMultForFloor, stageIndexAtProgress, stageCenterAtProgress,
   distanceAtTime,
 } from '../config';
@@ -24,6 +24,9 @@ export interface SimSnapshot {
   alive: boolean;
   running: boolean;
   finished: boolean;
+  maxLives: number;
+  lives: number;
+  survivedSec: number;
   floor: number;
   zoneId: ZoneId;
   stageIndex: number;
@@ -69,6 +72,10 @@ export class Sim {
   alive = true;
   running = false;
   finished = false;
+  maxLives = DEFAULT_MAX_LIVES;
+  lives = DEFAULT_MAX_LIVES;
+  survivedSec = 0;
+  private runStartTime = 0;
   time = 0;
   matchDuration = DEFAULT_MATCH_DURATION;
   floor = 1;
@@ -129,7 +136,8 @@ export class Sim {
     return Math.max(0, Math.min(1, this.time / Math.max(1, this.matchDuration)));
   }
 
-  reset(seed: number, tutorial = false, matchDuration = DEFAULT_MATCH_DURATION) {
+  reset(seed: number, tutorial = false, matchDuration = DEFAULT_MATCH_DURATION, maxLives = DEFAULT_MAX_LIVES) {
+    const safeMaxLives = Number.isFinite(maxLives) && maxLives >= 0 ? Math.floor(maxLives) : DEFAULT_MAX_LIVES;
     for (const o of this.obs) this.freeObs.push(o);
     for (const c of this.coinList) this.freeCoins.push(c);
     for (const cp of this.pickups) this.freePickups.push(cp);
@@ -141,6 +149,7 @@ export class Sim {
     Object.assign(this, {
       lane: 1, fromX: 0, laneT: 1, x: 0, y: 0, vy: 0, grounded: true, groundY: 0, slideT: 0, fastFall: false,
       slideQueued: false, coyoteT: 0, jumpBufT: 0, d: 0, speed: 0, alive: true, running: false, finished: false,
+      maxLives: safeMaxLives, lives: safeMaxLives, survivedSec: 0, runStartTime: 0,
       time: 0, matchDuration, floor: 1, zoneId: 1 as ZoneId, stageIndex: 0, stageCenter: 1 as CenterId,
       sinceStumble: 99, stumbleSlow: 0, frontHitSlow: false, invulnerableT: 0, hitCount: 0,
       ignoreId: -1, ignoreT: 0, airTime: 0, peakY: 0, coins: 0, coinStreak: 0,
@@ -148,6 +157,17 @@ export class Sim {
     });
     this.track.reset(seed, tutorial, matchDuration);
     if (!this.noSpawn) this.track.ensure(VIEW_AHEAD);
+  }
+
+  setLives(lives: number, maxLives = this.maxLives) {
+    const safeMax = Number.isFinite(maxLives) && maxLives >= 0 ? Math.floor(maxLives) : DEFAULT_MAX_LIVES;
+    this.maxLives = safeMax;
+    if (this.maxLives === 0) {
+      this.lives = 0;
+      return;
+    }
+    const rawLives = Number.isFinite(lives) ? Math.floor(lives) : this.maxLives;
+    this.lives = Math.max(0, Math.min(this.maxLives, rawLives));
   }
 
   // ------------------------------------------------------------------ pools
@@ -304,6 +324,8 @@ export class Sim {
   syncToElapsed(elapsed: number) {
     const safeElapsed = Math.max(0, Math.min(this.matchDuration - 1, elapsed));
     this.time = safeElapsed;
+    this.runStartTime = safeElapsed;
+    this.survivedSec = 0;
     this.d = distanceAtTime(safeElapsed, this.matchDuration);
     const p01 = this.progress01;
     this.floor = floorAtProgress(p01);
@@ -386,9 +408,9 @@ export class Sim {
 
   // ------------------------------------------------------------------ update
   update(dt: number) {
-    if (!this.running || this.finished) return;
-    let left = Math.min(dt, 0.5);
-    while (left > 1e-6 && this.running && !this.finished) {
+    if (!this.running || this.finished || !this.alive) return;
+    let left = Number.isFinite(dt) ? Math.max(0, Math.min(dt, 60)) : 0;
+    while (left > 1e-6 && this.running && !this.finished && this.alive) {
       const h = Math.min(MAX_STEP, left);
       this.step(h);
       left -= h;
@@ -397,6 +419,7 @@ export class Sim {
 
   private step(dt: number) {
     this.time += dt;
+    this.survivedSec = Math.max(0, this.time - this.runStartTime);
 
     // Update Floor, Zone & 9-Center Stage from elapsed time
     const p01 = this.progress01;
@@ -424,6 +447,7 @@ export class Sim {
     // Check 180s match finish
     if (this.time >= this.matchDuration) {
       this.time = this.matchDuration;
+      this.survivedSec = Math.max(0, this.time - this.runStartTime);
       this.floor = 10;
       this.zoneId = 4;
       this.stageIndex = 8;
@@ -519,6 +543,7 @@ export class Sim {
     if (!this.invincible) {
       this.collide(prevX, prevY, prevD, prevH);
     }
+    if (!this.alive) return;
     this.collectPickups(dt);
     this.hints();
 
@@ -706,6 +731,16 @@ export class Sim {
         continue;
       }
 
+      const dBefore = !(pd + PLAYER.halfD <= o.pd0 || pd - PLAYER.halfD >= o.pd1);
+      const xBefore = Math.abs(px - laneX(o.lane)) < o.halfW + PLAYER.halfW;
+      if (dBefore && xBefore) {
+        const topBefore = this.topAt(o, pd);
+        const walkBefore = o.walk && py >= topBefore - PLAYER.stepUp;
+        if (!walkBefore && py + ph - PLAYER.headTol > o.yb && py + PLAYER.feetTol < topBefore) {
+          continue;
+        }
+      }
+
       // Invulnerability grace window (after stumble or airborne power-up expiry)
       if (this.invulnerableT > 0) {
         this.ignoreId = o.id;
@@ -728,8 +763,6 @@ export class Sim {
       }
 
       const dx = Math.abs(this.x - laneX(o.lane));
-      const dBefore = !(pd + PLAYER.halfD <= o.pd0 || pd - PLAYER.halfD >= o.pd1);
-      const xBefore = Math.abs(px - laneX(o.lane)) < o.halfW + PLAYER.halfW;
       if (!dBefore) {
         if (o.walk && this.y >= this.topAt(o, this.d) - PLAYER.stepUp * 1.6) {
           this.y = this.topAt(o, this.d);
@@ -783,7 +816,33 @@ export class Sim {
     if (!this.grounded) this.land();
   }
 
+  private eliminate(kind: ObKind) {
+    this.alive = false;
+    this.running = false;
+    this.speed = 0;
+    this.slideT = 0;
+    this.stumbleSlow = 0;
+    this.frontHitSlow = false;
+    this.invulnerableT = 0;
+    this.activeCenter = null;
+    this.centerTimer = 0;
+    this.shieldHits = 0;
+    this.survivedSec = Math.max(0, this.time - this.runStartTime);
+    this.events.push({
+      type: 'eliminated',
+      kind,
+      x: this.x,
+      y: this.y,
+      score: Math.floor(this.score),
+      coins: this.coins,
+      distance: Math.floor(this.d),
+      survivedSec: +this.survivedSec.toFixed(2),
+      hitCount: this.hitCount,
+    });
+  }
+
   private bounce(o: Ob) {
+    const repeatedStumble = this.sinceStumble < PLAYER.stumbleWindow;
     const back = o.lane + (this.x < laneX(o.lane) ? -1 : 1);
     if (back >= 0 && back < LANE_COUNT) {
       this.fromX = this.x;
@@ -791,20 +850,39 @@ export class Sim {
       this.laneT = 0;
     }
     this.ignoreId = o.id;
-    this.ignoreT = 0.6;
+    this.ignoreT = repeatedStumble ? 1.5 : 0.6;
     this.sinceStumble = 0;
     if (this.stumbleSlow < 0.6) {
       this.stumbleSlow = 0.6;
       this.frontHitSlow = false;
     }
-    this.invulnerableT = Math.max(this.invulnerableT, 0.6);
+    this.invulnerableT = Math.max(this.invulnerableT, repeatedStumble ? PLAYER.frontHitInvulnDuration : 0.6);
     this.score = Math.max(0, this.score - PLAYER.sideHitPenalty);
-    this.events.push({ type: 'stumble', x: this.x, y: this.y, penalty: PLAYER.sideHitPenalty });
+    let lostLife = false;
+    if (repeatedStumble) {
+      this.hitCount++;
+      if (this.maxLives > 0) {
+        this.lives = Math.max(0, this.lives - 1);
+        lostLife = true;
+      }
+    }
+    this.events.push({
+      type: 'stumble',
+      x: this.x,
+      y: this.y,
+      penalty: PLAYER.sideHitPenalty,
+      lostLife,
+      livesLeft: this.lives,
+      maxLives: this.maxLives,
+    });
+    if (lostLife && this.lives <= 0) {
+      this.eliminate(o.kind);
+    }
   }
 
-  /** Forgiving No-Death Front Collision: -50 pts (clamped >= 0), 1.2s slowdown (0.65x), 1.5s invulnerability, coinStreak reset. */
+  /** Front Collision: -50 pts (clamped >= 0), deducts 1 life when maxLives > 0 (unlimited when maxLives === 0), 1.2s slowdown (0.65x), 1.5s invulnerability, coinStreak reset. */
   private frontHit(o?: Ob) {
-    this.alive = true; // Never kill the player during the 180s match
+    const kind: ObKind = o ? o.kind : 'train';
     this.hitCount++;
     this.slideT = 0;
     this.coinStreak = 0;
@@ -818,7 +896,24 @@ export class Sim {
       this.ignoreId = o.id;
       this.ignoreT = 1.5;
     }
-    this.events.push({ type: 'hit', kind: o ? o.kind : 'train', x: this.x, y: this.y, penalty: PLAYER.frontHitPenalty });
+    let lostLife = false;
+    if (this.maxLives > 0) {
+      this.lives = Math.max(0, this.lives - 1);
+      lostLife = true;
+    }
+    this.events.push({
+      type: 'hit',
+      kind,
+      x: this.x,
+      y: this.y,
+      penalty: PLAYER.frontHitPenalty,
+      lostLife,
+      livesLeft: this.lives,
+      maxLives: this.maxLives,
+    });
+    if (lostLife && this.lives <= 0) {
+      this.eliminate(kind);
+    }
   }
 
   private collectPickups(dt: number) {
@@ -901,6 +996,9 @@ export class Sim {
       alive: this.alive,
       running: this.running,
       finished: this.finished,
+      maxLives: this.maxLives,
+      lives: this.lives,
+      survivedSec: +this.survivedSec.toFixed(2),
       floor: this.floor,
       zoneId: this.zoneId,
       stageIndex: this.stageIndex,

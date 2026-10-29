@@ -47,8 +47,19 @@ export type SimEvent =
   | { type: 'slide' }
   | { type: 'lane'; dir: number }
   | { type: 'bump'; dir: number }
-  | { type: 'stumble'; x: number; y: number; penalty: number }
-  | { type: 'hit'; kind: ObKind; x: number; y: number; penalty: number }
+  | { type: 'stumble'; x: number; y: number; penalty: number; lostLife?: boolean; livesLeft?: number; maxLives?: number }
+  | { type: 'hit'; kind: ObKind; x: number; y: number; penalty: number; lostLife?: boolean; livesLeft?: number; maxLives?: number }
+  | {
+      type: 'eliminated';
+      kind: ObKind;
+      x: number;
+      y: number;
+      score: number;
+      coins: number;
+      distance: number;
+      survivedSec: number;
+      hitCount: number;
+    }
   | { type: 'shieldBlock'; x: number; y: number; remaining: number }
   | { type: 'armorSmash'; kind: ObKind; x: number; y: number; bonus: number }
   | { type: 'coin'; x: number; y: number; streak: number }

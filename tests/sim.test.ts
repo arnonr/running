@@ -141,4 +141,179 @@ describe('Sim: Forgiving No-Death Rules, 180s Timer & 9 Center Power-Ups', () =>
     }
     expect(stageChanges).toEqual([1, 4, 5, 3, 2, 6, 7, 8, 9]);
   });
+
+  it('deducts 1 life per front hit, eliminates runner on 3rd hit with survivedSec, and stops movement & inputs', () => {
+    const sim = new Sim(1);
+    sim.noSpawn = true;
+    sim.reset(1, false, 180, 3);
+    sim.start();
+    expect(sim.maxLives).toBe(3);
+    expect(sim.lives).toBe(3);
+
+    for (let hit = 1; hit <= 3; hit++) {
+      sim.invulnerableT = 0;
+      sim.ignoreId = -1;
+      sim.ignoreT = 0;
+      const d0 = sim.d + 2;
+      sim.addOb({ kind: 'train', lane: 1, d0, d1: d0 + 8, cars: 1 });
+      sim.update(0.4);
+      if (hit < 3) {
+        expect(sim.alive).toBe(true);
+        expect(sim.lives).toBe(3 - hit);
+      }
+    }
+
+    expect(sim.alive).toBe(false);
+    expect(sim.running).toBe(false);
+    expect(sim.lives).toBe(0);
+    expect(sim.speed).toBe(0);
+    const events = sim.drainEvents();
+    const elim = events.find((e) => e.type === 'eliminated');
+    expect(elim).toBeDefined();
+    if (elim?.type === 'eliminated') {
+      expect(elim.survivedSec).toBeCloseTo(sim.survivedSec, 1);
+      expect(elim.hitCount).toBe(3);
+    }
+
+    const dAtDeath = sim.d;
+    sim.left();
+    sim.jump();
+    sim.update(1.0);
+    expect(sim.d).toBe(dAtDeath);
+    expect(sim.lane).toBe(1);
+  });
+
+  it('keeps isolated side-stumbles non-lethal (-20 pts, 0 lives lost) while repeated side-stumbles (< 4.5s) deduct 1 life with 1.5s multi-car grace', () => {
+    const sim = new Sim(1);
+    sim.noSpawn = true;
+    sim.reset(1, false, 180, 3);
+    sim.start();
+    sim.score = 200;
+
+    // 1st isolated side-stumble (changing from lane 1 into a train already alongside in lane 0)
+    sim.addOb({ kind: 'train', lane: 0, d0: sim.d - 2, d1: sim.d + 30, cars: 3 });
+    sim.left();
+    sim.update(0.2);
+    let evs = sim.drainEvents();
+    const firstStumble = evs.find((e) => e.type === 'stumble');
+    expect(firstStumble).toBeDefined();
+    if (firstStumble?.type === 'stumble') expect(firstStumble.lostLife).toBe(false);
+    expect(sim.lives).toBe(3);
+
+    // Wait > 4.5s (stumbleWindow) -> next side-stumble is also isolated (no life lost)
+    sim.clearWorld();
+    sim.update(4.7);
+    sim.addOb({ kind: 'train', lane: 0, d0: sim.d - 2, d1: sim.d + 30, cars: 3 });
+    sim.left();
+    sim.update(0.2);
+    expect(sim.lives).toBe(3);
+    sim.drainEvents();
+
+    // Within 4.5s (e.g. 1.0s later after 0.6s invuln expires), side-stumble again into a long 3-car train -> loses exactly 1 life (not 2)
+    sim.update(0.8);
+    expect(sim.sinceStumble).toBeLessThan(4.5);
+    sim.left();
+    sim.update(0.6);
+    evs = sim.drainEvents();
+    const secondStumble = evs.find((e) => e.type === 'stumble');
+    expect(secondStumble).toBeDefined();
+    if (secondStumble?.type === 'stumble') {
+      expect(secondStumble.lostLife).toBe(true);
+      expect(secondStumble.livesLeft).toBe(2);
+    }
+    expect(sim.lives).toBe(2);
+    expect(sim.invulnerableT).toBeGreaterThan(0.8);
+  });
+
+  it('absorbs 2 hits with Center #4 Shield without losing lives, does NOT heal lives on Center #8, supports maxLives=0 unlimited mode, and tracks survivedSec after syncToElapsed', () => {
+    const sim = new Sim(1);
+    sim.noSpawn = true;
+    sim.reset(1, false, 180, 3);
+    sim.start();
+    sim.syncToElapsed(40);
+    sim.invulnerableT = 0;
+
+    // Center #4 blocks 2 front hits with 0 life loss
+    sim.activateCenter(4);
+    sim.invulnerableT = 0;
+    for (let i = 0; i < 2; i++) {
+      sim.invulnerableT = 0;
+      sim.ignoreId = -1;
+      sim.ignoreT = 0;
+      sim.addOb({ kind: 'train', lane: 1, d0: sim.d + 2, d1: sim.d + 8, cars: 1 });
+      sim.update(0.35);
+    }
+    expect(sim.lives).toBe(3);
+
+    // Lose 1 life -> 2/3, then activate Center #8 -> lives remain 2/3 (no healing)
+    sim.invulnerableT = 0;
+    sim.ignoreId = -1;
+    sim.ignoreT = 0;
+    sim.addOb({ kind: 'train', lane: 1, d0: sim.d + 2, d1: sim.d + 8, cars: 1 });
+    sim.update(0.35);
+    expect(sim.lives).toBe(2);
+    sim.activateCenter(8);
+    expect(sim.lives).toBe(2);
+    expect(sim.survivedSec).toBeCloseTo(sim.time - 40, 2);
+
+    // Unlimited mode (maxLives = 0) never loses lives or dies even after 5 front hits
+    sim.reset(1, false, 180, 0);
+    sim.start();
+    for (let k = 0; k < 5; k++) {
+      sim.invulnerableT = 0;
+      sim.ignoreId = -1;
+      sim.ignoreT = 0;
+      sim.addOb({ kind: 'train', lane: 1, d0: sim.d + 2, d1: sim.d + 8, cars: 1 });
+      sim.update(0.35);
+    }
+    expect(sim.alive).toBe(true);
+    expect(sim.maxLives).toBe(0);
+    expect(sim.hitCount).toBe(5);
+  });
+
+  it('syncs and clamps lives via setLives, exposes lives/maxLives/survivedSec in snapshot(), and eliminates on fatal repeated side-stumble', () => {
+    const sim = new Sim(1);
+    sim.noSpawn = true;
+    sim.reset(1, false, 180, 5);
+    sim.start();
+    expect(sim.snapshot().maxLives).toBe(5);
+    expect(sim.snapshot().lives).toBe(5);
+
+    sim.setLives(2, 3);
+    expect(sim.maxLives).toBe(3);
+    expect(sim.lives).toBe(2);
+
+    sim.setLives(99, 3);
+    expect(sim.lives).toBe(3);
+
+    sim.setLives(5, 0);
+    expect(sim.maxLives).toBe(0);
+    expect(sim.lives).toBe(0);
+
+    // Fatal repeated side-stumble from 1 remaining life
+    sim.setLives(1, 3);
+    expect(sim.lives).toBe(1);
+    sim.addOb({ kind: 'train', lane: 0, d0: sim.d - 2, d1: sim.d + 40, cars: 4 });
+    sim.left();
+    sim.update(0.2);
+    expect(sim.alive).toBe(true);
+    expect(sim.lives).toBe(1);
+
+    sim.update(0.8);
+    sim.left();
+    sim.update(0.3);
+    expect(sim.alive).toBe(false);
+    expect(sim.running).toBe(false);
+    expect(sim.lives).toBe(0);
+    const snap = sim.snapshot();
+    expect(snap.alive).toBe(false);
+    expect(snap.lives).toBe(0);
+    expect(snap.maxLives).toBe(3);
+    expect(snap.survivedSec).toBeGreaterThan(0);
+    const elim = sim.drainEvents().find((e) => e.type === 'eliminated');
+    expect(elim).toBeDefined();
+    if (elim?.type === 'eliminated') {
+      expect(elim.kind).toBe('train');
+    }
+  });
 });

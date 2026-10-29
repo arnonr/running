@@ -3,6 +3,7 @@ import {
   CENTERS, CENTER_LIST, DEFAULT_MATCH_DURATION, POWER_DURATION,
   STAGE_CENTER_ORDER, stageIndexAtProgress, stageCenterAtProgress, stageGateDistances,
   floorAtProgress, zoneAtProgress, baseMultForFloor, speedAtProgress,
+  DEFAULT_MAX_LIVES, MAX_LIVES_OPTIONS, sanitizeMaxLives,
 } from '../src/config';
 import { Rng } from '../src/sim/rng';
 
@@ -92,5 +93,18 @@ describe('TechnoPark Config & RNG', () => {
     expect(CENTERS[4].shortTh).toBe('สิ่งแวดล้อมและการอนุรักษ์พลังงาน');
     expect(CENTERS[5].shortTh).toBe('นวัตกรรมไร้สายล้ำหน้ายุค 5G');
     expect(CENTERS[7].shortTh).toBe('เทคโนโลยีชีวภาพและเคมีชีวภาพ');
+  });
+
+  it('defines lives quota presets [3, 5, 0] and sanitizes invalid/null inputs to DEFAULT_MAX_LIVES (3)', () => {
+    expect(DEFAULT_MAX_LIVES).toBe(3);
+    expect(MAX_LIVES_OPTIONS).toEqual([3, 5, 0]);
+    expect(sanitizeMaxLives(3)).toBe(3);
+    expect(sanitizeMaxLives(5)).toBe(5);
+    expect(sanitizeMaxLives(0)).toBe(0);
+    expect(sanitizeMaxLives(null)).toBe(3);
+    expect(sanitizeMaxLives(undefined)).toBe(3);
+    expect(sanitizeMaxLives(NaN)).toBe(3);
+    expect(sanitizeMaxLives(-1)).toBe(3);
+    expect(sanitizeMaxLives(99)).toBe(3);
   });
 });

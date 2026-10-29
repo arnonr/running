@@ -6,6 +6,16 @@ export const GAME_TITLE = {
 };
 
 export const DEFAULT_MATCH_DURATION = 180; // 3 minutes (180 seconds)
+export const DEFAULT_MAX_LIVES = 3;
+export const MAX_LIVES_OPTIONS = [3, 5, 0] as const;
+
+export function sanitizeMaxLives(raw?: number | null): number {
+  if (typeof raw === 'number' && (raw === 0 || raw === 3 || raw === 5)) {
+    return raw;
+  }
+  return DEFAULT_MAX_LIVES;
+}
+
 export const POWER_DURATION = 5.0; // 5 seconds per Center power-up
 export const PICKUP_PULL_RANGE = 2.2; // generous pull radius so players rarely miss capsules
 
