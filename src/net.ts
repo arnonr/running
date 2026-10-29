@@ -363,7 +363,8 @@ export class MatchRoomCore {
       if (state.survivedSec !== undefined && Number.isFinite(state.survivedSec)) {
         r.survivedSec = +Math.max(0, state.survivedSec).toFixed(2);
       }
-      if (state.lives !== undefined) {
+      const staleMaxLives = state.maxLives !== undefined && state.maxLives !== this.maxLives;
+      if (state.lives !== undefined && !(staleMaxLives && state.eliminated !== true)) {
         if (this.maxLives > 0) {
           const clamped = Math.max(0, Math.min(this.maxLives, Math.floor(state.lives)));
           r.lives = clamped;
@@ -377,7 +378,7 @@ export class MatchRoomCore {
       if (
         !r.isBot &&
         (state.eliminated === true ||
-          (this.maxLives > 0 && state.lives !== undefined && state.lives <= 0))
+          (!staleMaxLives && this.maxLives > 0 && state.lives !== undefined && state.lives <= 0))
       ) {
         this.eliminateRunner(id, state.survivedSec);
       }

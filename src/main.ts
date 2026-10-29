@@ -7,7 +7,10 @@ import { Audio } from './audio';
 import { bindInput, type Action } from './input';
 import {
   UI,
+  canResumeFromPause,
   shouldCancelDeathReveal,
+  shouldEvictToLobbyOnSnapshot,
+  shouldForfeitActiveRound,
   shouldStepSimInScreen,
   type Screen,
 } from './ui';
@@ -112,6 +115,9 @@ async function main() {
   let lastResultEliminated = false;
   let lastSurvivedSec = 0;
   let queuedForNextRound = false;
+  let confirmedInRoom = false;
+  let joinPendingUntil = 0;
+  let joinPendingMatchId = -1;
   const horned = new Set<number>();
 
   function clearDeathRevealTimer() {
@@ -161,12 +167,15 @@ async function main() {
 
   const forfeitActiveRoundIfNeeded = () => {
     if (
-      !soloRun &&
-      !isTvMode &&
-      hasJoinedLobby &&
-      latestRoom.phase === 'RUNNING' &&
-      sim.alive &&
-      sim.maxLives > 0
+      shouldForfeitActiveRound({
+        soloRun,
+        isTvMode,
+        hasJoinedLobby,
+        roomPhase: latestRoom.phase,
+        simAlive: sim.alive,
+        simFinished: sim.finished,
+        simMaxLives: sim.maxLives,
+      })
     ) {
       eliminatedMatchId = latestRoom.matchId;
       sim.setLives(0, sim.maxLives);
@@ -198,6 +207,9 @@ async function main() {
           soloRun = false;
           queuedForNextRound = true;
           joinedMatchId = preSnap.matchId;
+          confirmedInRoom = false;
+          joinPendingUntil = performance.now() + 1500;
+          joinPendingMatchId = preSnap.matchId;
           net.join(savedProfile, { immediate: false });
           ui.setLobbyReady(true);
           ui.toast('⏳ คุณจบการวิ่งในรอบนี้แล้ว — เข้าคิวรอรอบถัดไปเรียบร้อย!', 2600);
@@ -205,6 +217,9 @@ async function main() {
         }
         hasJoinedLobby = true;
         soloRun = false;
+        confirmedInRoom = false;
+        joinPendingUntil = performance.now() + 1500;
+        joinPendingMatchId = preSnap.matchId;
         if (preSnap.phase === 'RUNNING') {
           joinedMatchId = preSnap.matchId;
         }
@@ -242,6 +257,10 @@ async function main() {
         audio.click();
         queuedForNextRound = true;
         hasJoinedLobby = true;
+        if (!confirmedInRoom) {
+          joinPendingUntil = performance.now() + 1500;
+          joinPendingMatchId = latestRoom.matchId;
+        }
         net.join(savedProfile, { immediate: false });
         const snap = net.getSnapshot();
         const myRunner = snap.activeRunners.find((r) => r.id === savedProfile.id);
@@ -266,6 +285,9 @@ async function main() {
         clearDeathRevealTimer();
         currentChannel = nextCh;
         hasJoinedLobby = false;
+        confirmedInRoom = false;
+        joinPendingUntil = 0;
+        joinPendingMatchId = -1;
         joinedMatchId = -1;
         eliminatedMatchId = -1;
         lastResultEliminated = false;
@@ -325,7 +347,7 @@ async function main() {
         avatarPreview.triggerCelebratePose();
       },
       resume: () => {
-        if (state !== 'pause') return;
+        if (!canResumeFromPause(state, sim.alive, deathRevealTimer !== null)) return;
         audio.unlock();
         state = 'play';
         audio.startMusic();
@@ -365,6 +387,9 @@ async function main() {
         if (isTvMode) {
           clearDeathRevealTimer();
           hasJoinedLobby = false;
+          confirmedInRoom = false;
+          joinPendingUntil = 0;
+          joinPendingMatchId = -1;
           net.leave(savedProfile.id);
         }
         syncUrlQueryParams();
@@ -456,6 +481,7 @@ async function main() {
 
     if (soloRun) return;
 
+    const hadDeathReveal = deathRevealTimer !== null;
     if (shouldCancelDeathReveal(prevPhase, snap.phase)) {
       clearDeathRevealTimer();
     }
@@ -504,7 +530,36 @@ async function main() {
 
     const isParticipant =
       isTvMode || (hasJoinedLobby && (Boolean(myActiveRunner) || isQueuedInSnap));
-    if (!isParticipant) return;
+    if (!isTvMode && hasJoinedLobby && (Boolean(myActiveRunner) || isQueuedInSnap)) {
+      confirmedInRoom = true;
+      joinPendingUntil = 0;
+    }
+    const awaitingJoinAck =
+      hasJoinedLobby &&
+      !confirmedInRoom &&
+      !hadDeathReveal &&
+      performance.now() < joinPendingUntil &&
+      snap.matchId === joinPendingMatchId &&
+      snap.phase !== 'LOBBY' &&
+      snap.activeRunners.length > 0;
+    if (!isParticipant) {
+      if (
+        shouldEvictToLobbyOnSnapshot({
+          isParticipant,
+          isTvMode,
+          soloRun,
+          hadDeathReveal,
+          screen: state,
+          awaitingJoinAck,
+        })
+      ) {
+        hasJoinedLobby = false;
+        confirmedInRoom = false;
+        joinPendingUntil = 0;
+        toLobby(false);
+      }
+      return;
+    }
 
     const canRunCurrentRound =
       isTvMode || (hasJoinedLobby && Boolean(myActiveRunner) && !isEliminatedInSnap);
@@ -674,6 +729,7 @@ async function main() {
       return;
     }
     if (state === 'pause') {
+      if (!canResumeFromPause(state, sim.alive, deathRevealTimer !== null)) return;
       if (a === 'pause' || a === 'confirm') {
         audio.unlock();
         state = 'play';
@@ -764,6 +820,10 @@ async function main() {
         if (!soloRun) {
           eliminatedMatchId = latestRoom.matchId;
         }
+        if (state === 'pause') {
+          state = 'play';
+          ui.show('play');
+        }
         audio.eliminated();
         audio.stopMusic();
         ui.flash('hit');
@@ -784,6 +844,7 @@ async function main() {
         deathRevealTimer = window.setTimeout(() => {
           deathRevealTimer = null;
           if (isTvMode) return;
+          audio.stopMusic();
           const myRunner = latestRoom.activeRunners.find((r) => r.id === savedProfile.id);
           const rank = myRunner ? myRunner.rank : 1;
           const survivedSec =

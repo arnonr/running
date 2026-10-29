@@ -119,6 +119,53 @@ export function shouldCancelDeathReveal(
   return (nextPhase === 'LOBBY' || nextPhase === 'COUNTDOWN') && nextPhase !== prevPhase;
 }
 
+export function shouldEvictToLobbyOnSnapshot(opts: {
+  isParticipant: boolean;
+  isTvMode: boolean;
+  soloRun: boolean;
+  hadDeathReveal: boolean;
+  screen: Screen;
+  awaitingJoinAck?: boolean;
+}): boolean {
+  if (opts.isParticipant || opts.isTvMode || opts.soloRun || opts.awaitingJoinAck) {
+    return false;
+  }
+  return (
+    opts.hadDeathReveal ||
+    opts.screen === 'play' ||
+    opts.screen === 'pause' ||
+    opts.screen === 'countdown'
+  );
+}
+
+export function canResumeFromPause(
+  screen: Screen,
+  simAlive: boolean,
+  hasDeathReveal: boolean,
+): boolean {
+  return screen === 'pause' && simAlive && !hasDeathReveal;
+}
+
+export function shouldForfeitActiveRound(opts: {
+  soloRun: boolean;
+  isTvMode: boolean;
+  hasJoinedLobby: boolean;
+  roomPhase: RoomSnapshot['phase'];
+  simAlive: boolean;
+  simFinished: boolean;
+  simMaxLives: number;
+}): boolean {
+  return (
+    !opts.soloRun &&
+    !opts.isTvMode &&
+    opts.hasJoinedLobby &&
+    opts.roomPhase === 'RUNNING' &&
+    opts.simAlive &&
+    !opts.simFinished &&
+    opts.simMaxLives > 0
+  );
+}
+
 export interface AvatarShowcaseViewModel {
   avatarId: AvatarId;
   titleTh: string;

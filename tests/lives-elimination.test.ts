@@ -6,10 +6,13 @@ import { PlayerView } from '../src/view/player';
 import { World, TV_ANCHOR_Z } from '../src/view/world';
 import { Sim } from '../src/sim/sim';
 import {
+  canResumeFromPause,
   describeResultHeader,
   formatHeartsPill,
   formatTvRunnerStatus,
   shouldCancelDeathReveal,
+  shouldEvictToLobbyOnSnapshot,
+  shouldForfeitActiveRound,
   shouldStepSimInScreen,
 } from '../src/ui';
 
@@ -184,6 +187,89 @@ describe('MatchRoomCore: Lives Authority, Early Podium, Winner Ranking & Anti-Re
     expect(snap.activeRunners.find((r) => r.id === 'p1')?.eliminated).toBe(true);
     expect(snap.activeRunners.find((r) => r.id === 'p2')?.maxLives).toBe(0);
     expect(snap.activeRunners.find((r) => r.id === 'p2')?.eliminated).toBe(false);
+  });
+
+  it('ignores stale-maxLives life counts on mid-race set_max_lives (0 -> 3, 3 -> 5, 5 -> 3) without mass-eliminating alive humans, while still honoring genuine eliminations', () => {
+    const room = new MatchRoomCore('1');
+    room.addDemoBots(2);
+    room.hostCommand({ action: 'set_max_lives', maxLives: 0 });
+    room.join({ id: 'h1', name: 'นนท์', role: 'senior', color: '#38bdf8' }, { immediate: true });
+    room.join({ id: 'h2', name: 'เมย์', role: 'uni', color: '#ec4899' }, { immediate: true });
+    room.join({ id: 'h3', name: 'คิน', role: 'uni', color: '#f59e0b' }, { immediate: true });
+
+    room.hostCommand({ action: 'start_now' });
+    room.tick(3.5);
+    room.tick(15);
+    expect(room.phase).toBe('RUNNING');
+
+    // In unlimited mode (maxLives=0), phones transmit { lives: 0, maxLives: 0, eliminated: false } every 50ms
+    room.updateRunnerState('h1', { score: 1200, d: 210, lives: 0, maxLives: 0, eliminated: false });
+    room.updateRunnerState('h2', { score: 1150, d: 205, lives: 0, maxLives: 0, eliminated: false });
+    room.updateRunnerState('h3', { score: 1100, d: 200, lives: 0, maxLives: 0, eliminated: false });
+
+    // Admin toggles 0 -> 3 mid-race
+    room.hostCommand({ action: 'set_max_lives', maxLives: 3 });
+    expect(room.maxLives).toBe(3);
+
+    // Pre-snapshot in-flight 50ms packets with { lives: 0, maxLives: 0, eliminated: false } arrive for all alive humans
+    room.updateRunnerState('h1', { score: 1350, d: 230, lives: 0, maxLives: 0, eliminated: false });
+    room.updateRunnerState('h2', { score: 1300, d: 225, lives: 0, maxLives: 0, eliminated: false });
+    room.updateRunnerState('h3', { score: 1250, d: 220, lives: 0, maxLives: 0, eliminated: false });
+    room.tick(0.05);
+
+    // Race MUST stay RUNNING and all 3 humans MUST remain alive at 3/3 lives (including persisted roundLives)
+    expect(room.phase).toBe('RUNNING');
+    let snap = room.getSnapshot();
+    expect(snap.eliminatedIds).toEqual([]);
+    for (const id of ['h1', 'h2', 'h3']) {
+      const r = snap.activeRunners.find((x) => x.id === id)!;
+      expect(r.eliminated).toBe(false);
+      expect(r.lives).toBe(3);
+      expect(r.maxLives).toBe(3);
+    }
+    expect(snap.activeRunners.find((x) => x.id === 'h1')?.score).toBe(1350);
+
+    // Verify roundLives was not poisoned with 0 if h1 briefly leaves/refreshes and rejoins
+    room.leave('h1');
+    room.join({ id: 'h1', name: 'นนท์', role: 'senior', color: '#38bdf8' }, { immediate: true });
+    expect(room.getSnapshot().activeRunners.find((x) => x.id === 'h1')?.lives).toBe(3);
+
+    // Stale packet handling across 3 -> 5 and 5 -> 3 transitions:
+    // Admin switches 3 -> 5, h2 adopts maxLives=5 with 5 lives, then Admin switches 5 -> 3 (clamping h2 to 3)
+    room.hostCommand({ action: 'set_max_lives', maxLives: 5 });
+    // Stale packet under maxLives=3 with lives=1 must not overwrite server's 3 lives before client adopts maxLives=5
+    room.updateRunnerState('h2', { score: 1400, lives: 1, maxLives: 3, eliminated: false });
+    expect(room.getSnapshot().activeRunners.find((x) => x.id === 'h2')?.lives).toBe(3);
+
+    // Once h2 adopts maxLives=5, its life updates apply normally
+    room.updateRunnerState('h2', { score: 1450, lives: 5, maxLives: 5, eliminated: false });
+    expect(room.getSnapshot().activeRunners.find((x) => x.id === 'h2')?.lives).toBe(5);
+
+    // Admin switches 5 -> 3 (server clamps h2 to 3); stale packet { lives: 2, maxLives: 5, eliminated: false } is ignored until client adopts maxLives=3
+    room.hostCommand({ action: 'set_max_lives', maxLives: 3 });
+    expect(room.getSnapshot().activeRunners.find((x) => x.id === 'h2')?.lives).toBe(3);
+    room.updateRunnerState('h2', { score: 1500, lives: 2, maxLives: 5, eliminated: false });
+    expect(room.getSnapshot().activeRunners.find((x) => x.id === 'h2')?.lives).toBe(3);
+
+    // Genuine { lives: 0, maxLives: 3, eliminated: false } under matching maxLives=3 eliminates h1 cleanly
+    room.updateRunnerState('h1', { score: 1600, lives: 0, maxLives: 3, eliminated: false });
+    snap = room.getSnapshot();
+    expect(snap.activeRunners.find((x) => x.id === 'h1')?.eliminated).toBe(true);
+    expect(snap.eliminatedIds).toContain('h1');
+    expect(room.phase).toBe('RUNNING');
+
+    // Genuine { lives: 0, eliminated: false } with omitted maxLives eliminates h2 cleanly
+    room.updateRunnerState('h2', { score: 1650, lives: 0, eliminated: false });
+    snap = room.getSnapshot();
+    expect(snap.activeRunners.find((x) => x.id === 'h2')?.eliminated).toBe(true);
+    expect(snap.eliminatedIds).toContain('h2');
+
+    // Genuine { eliminated: true } eliminates h3 even if packet still carried an older maxLives
+    room.updateRunnerState('h3', { score: 1700, lives: 0, maxLives: 5, eliminated: true });
+    room.tick(0.05);
+    snap = room.getSnapshot();
+    expect(snap.activeRunners.find((x) => x.id === 'h3')?.eliminated).toBe(true);
+    expect(room.phase).toBe('PODIUM');
   });
 
   it('routes disconnect immediately to leave in LOBBY/COUNTDOWN and forfeits alive runners on disconnect during RUNNING via Registry and NetClient', () => {
@@ -710,5 +796,155 @@ describe('Mobile HUD Hearts, Option-A Eliminated Result Copy & TV Status Formatt
     expect(shouldCancelDeathReveal('RUNNING', 'LOBBY')).toBe(true);
     expect(shouldCancelDeathReveal('PODIUM', 'LOBBY')).toBe(true);
     expect(shouldCancelDeathReveal('RUNNING', 'COUNTDOWN')).toBe(true);
+  });
+
+  it('recovers evicted mobile runners to Lobby (including cancelled deathRevealTimer resets) without kicking Solo Practice, guards Pause resume on death, and skips forfeit after 180s finish', () => {
+    // Important #1: Eviction recovery when !isParticipant (including simultaneous deathRevealTimer cancel)
+    expect(
+      shouldEvictToLobbyOnSnapshot({
+        isParticipant: false,
+        isTvMode: false,
+        soloRun: false,
+        hadDeathReveal: true,
+        screen: 'play',
+      }),
+    ).toBe(true);
+    expect(
+      shouldEvictToLobbyOnSnapshot({
+        isParticipant: false,
+        isTvMode: false,
+        soloRun: false,
+        hadDeathReveal: false,
+        screen: 'pause',
+      }),
+    ).toBe(true);
+    expect(
+      shouldEvictToLobbyOnSnapshot({
+        isParticipant: false,
+        isTvMode: false,
+        soloRun: false,
+        hadDeathReveal: false,
+        screen: 'countdown',
+      }),
+    ).toBe(true);
+    // Solo Practice (!isParticipant on background room snapshots) must NEVER be kicked to Lobby
+    expect(
+      shouldEvictToLobbyOnSnapshot({
+        isParticipant: false,
+        isTvMode: false,
+        soloRun: true,
+        hadDeathReveal: false,
+        screen: 'play',
+      }),
+    ).toBe(false);
+    expect(
+      shouldEvictToLobbyOnSnapshot({
+        isParticipant: false,
+        isTvMode: false,
+        soloRun: true,
+        hadDeathReveal: true,
+        screen: 'play',
+      }),
+    ).toBe(false);
+    // TV mode, active participants, in-flight join ack, and start/over screens are not evicted
+    expect(
+      shouldEvictToLobbyOnSnapshot({
+        isParticipant: false,
+        isTvMode: true,
+        soloRun: false,
+        hadDeathReveal: false,
+        screen: 'play',
+      }),
+    ).toBe(false);
+    expect(
+      shouldEvictToLobbyOnSnapshot({
+        isParticipant: true,
+        isTvMode: false,
+        soloRun: false,
+        hadDeathReveal: true,
+        screen: 'play',
+      }),
+    ).toBe(false);
+    expect(
+      shouldEvictToLobbyOnSnapshot({
+        isParticipant: false,
+        isTvMode: false,
+        soloRun: false,
+        hadDeathReveal: false,
+        screen: 'play',
+        awaitingJoinAck: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldEvictToLobbyOnSnapshot({
+        isParticipant: false,
+        isTvMode: false,
+        soloRun: false,
+        hadDeathReveal: false,
+        screen: 'start',
+      }),
+    ).toBe(false);
+    expect(
+      shouldEvictToLobbyOnSnapshot({
+        isParticipant: false,
+        isTvMode: false,
+        soloRun: false,
+        hadDeathReveal: false,
+        screen: 'over',
+      }),
+    ).toBe(false);
+
+    // Important #2: Block pause resume when runner is dead or inside 1.2s deathRevealTimer
+    expect(canResumeFromPause('pause', true, false)).toBe(true);
+    expect(canResumeFromPause('pause', false, false)).toBe(false);
+    expect(canResumeFromPause('pause', false, true)).toBe(false);
+    expect(canResumeFromPause('pause', true, true)).toBe(false);
+    expect(canResumeFromPause('play', true, false)).toBe(false);
+
+    // Important #3: Full-duration 180s survivor (simFinished === true, simAlive === true) must NOT forfeit if server PODIUM snapshot is still in flight
+    expect(
+      shouldForfeitActiveRound({
+        soloRun: false,
+        isTvMode: false,
+        hasJoinedLobby: true,
+        roomPhase: 'RUNNING',
+        simAlive: true,
+        simFinished: false,
+        simMaxLives: 3,
+      }),
+    ).toBe(true);
+    expect(
+      shouldForfeitActiveRound({
+        soloRun: false,
+        isTvMode: false,
+        hasJoinedLobby: true,
+        roomPhase: 'RUNNING',
+        simAlive: true,
+        simFinished: true,
+        simMaxLives: 3,
+      }),
+    ).toBe(false);
+    expect(
+      shouldForfeitActiveRound({
+        soloRun: true,
+        isTvMode: false,
+        hasJoinedLobby: true,
+        roomPhase: 'RUNNING',
+        simAlive: true,
+        simFinished: false,
+        simMaxLives: 3,
+      }),
+    ).toBe(false);
+    expect(
+      shouldForfeitActiveRound({
+        soloRun: false,
+        isTvMode: false,
+        hasJoinedLobby: true,
+        roomPhase: 'RUNNING',
+        simAlive: true,
+        simFinished: false,
+        simMaxLives: 0,
+      }),
+    ).toBe(false);
   });
 });
