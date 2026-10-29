@@ -1,4 +1,11 @@
-import { DEFAULT_MATCH_DURATION, distanceAtTime, floorAtProgress, laneX } from './config';
+import {
+  DEFAULT_MATCH_DURATION,
+  DEFAULT_MAX_LIVES,
+  distanceAtTime,
+  floorAtProgress,
+  laneX,
+  sanitizeMaxLives,
+} from './config';
 import type { CenterId } from './sim/types';
 import { sanitizeAvatarId, type AvatarId } from './view/avatars';
 
@@ -58,6 +65,10 @@ export interface RunnerNetState {
   sliding?: boolean;
   stumbling?: boolean;
   isBot?: boolean;
+  lives?: number;
+  maxLives?: number;
+  eliminated?: boolean;
+  survivedSec?: number;
 }
 
 export interface RoomSnapshot {
@@ -66,6 +77,8 @@ export interface RoomSnapshot {
   phase: RoomPhase;
   phaseTimeLeft: number;
   matchDuration: number;
+  maxLives: number;
+  eliminatedIds: string[];
   lobbyHold: boolean;
   matchSeed: number;
   referenceDistance: number;
@@ -80,6 +93,7 @@ export type HostCommand =
   | { action: 'start_now' }
   | { action: 'toggle_hold' }
   | { action: 'set_duration'; duration: number }
+  | { action: 'set_max_lives'; maxLives: number }
   | { action: 'add_bots'; count?: number }
   | { action: 'remove_bots'; count?: number }
   | { action: 'clear_bots' }
@@ -115,6 +129,7 @@ export class MatchRoomCore {
   phase: RoomPhase = 'LOBBY';
   phaseTimeLeft = 45;
   matchDuration = DEFAULT_MATCH_DURATION;
+  maxLives = DEFAULT_MAX_LIVES;
   lobbyHold = true;
   matchSeed = 202610;
   referenceDistance = 0;
@@ -123,6 +138,11 @@ export class MatchRoomCore {
   private activeMap = new Map<string, RunnerNetState>();
   private waitingMap = new Map<string, PlayerProfile>();
   private botSeeds = new Map<string, number>();
+  private eliminatedIds = new Set<string>();
+  private roundLives = new Map<string, number>();
+  private joinedAtElapsed = new Map<string, number>();
+  private silentSec = new Map<string, number>();
+  private disconnectedIds = new Set<string>();
   allDayBest: { name: string; score: number; role: PlayerRole }[] = [
     { name: 'กัปตัน SUTO', score: 9850, role: 'uni' },
     { name: 'น้องภูมิ ม.ปลาย', score: 8420, role: 'senior' },
@@ -131,6 +151,32 @@ export class MatchRoomCore {
 
   constructor(channel: ChannelId = '1') {
     this.channel = sanitizeChannelId(channel);
+  }
+
+  private currentElapsed(): number {
+    if (this.phase !== 'RUNNING') return 0;
+    return Math.max(
+      0,
+      Math.min(this.matchDuration, this.matchDuration - Math.max(0, this.phaseTimeLeft)),
+    );
+  }
+
+  private eliminateRunner(id: string, fallbackSurvivedSec?: number): void {
+    const r = this.activeMap.get(id);
+    if (!r || r.isBot) return;
+    this.eliminatedIds.add(id);
+    this.roundLives.set(id, 0);
+    if (r.eliminated) return;
+    r.eliminated = true;
+    r.lives = 0;
+    r.maxLives = this.maxLives;
+    r.activeCenter = null;
+    r.sliding = false;
+    r.stumbling = false;
+    r.survivedSec =
+      this.phase === 'RUNNING'
+        ? +Math.max(0, this.currentElapsed() - (this.joinedAtElapsed.get(id) ?? 0)).toFixed(2)
+        : +(fallbackSurvivedSec ?? r.survivedSec ?? 0).toFixed(2);
   }
 
   join(profile: PlayerProfile, options?: { immediate?: boolean }): { queuedForNextRound: boolean } {
@@ -143,12 +189,44 @@ export class MatchRoomCore {
       avatar: cleanAvatar,
     };
 
+    this.disconnectedIds.delete(cleanProfile.id);
+
+    if (
+      (this.phase === 'RUNNING' || this.phase === 'COUNTDOWN' || this.phase === 'PODIUM') &&
+      this.eliminatedIds.has(cleanProfile.id)
+    ) {
+      const existingElim = this.activeMap.get(cleanProfile.id);
+      if (existingElim) {
+        existingElim.name = cleanProfile.name;
+        existingElim.role = cleanProfile.role;
+        existingElim.color = cleanProfile.color;
+        existingElim.avatar = cleanAvatar;
+      }
+      this.waitingMap.set(cleanProfile.id, cleanProfile);
+      return { queuedForNextRound: true };
+    }
+
     const forceImmediate = !!options?.immediate;
 
     if (this.phase === 'LOBBY' || forceImmediate) {
       this.waitingMap.delete(cleanProfile.id);
       const existing = this.activeMap.get(cleanProfile.id);
       const joinMidRun = this.phase === 'RUNNING' && !existing;
+      if (joinMidRun) {
+        if (!this.joinedAtElapsed.has(cleanProfile.id)) {
+          this.joinedAtElapsed.set(cleanProfile.id, this.currentElapsed());
+        }
+        this.silentSec.set(cleanProfile.id, 0);
+      }
+      const initialLives =
+        this.maxLives === 0
+          ? 0
+          : cleanProfile.isBot
+            ? this.maxLives
+            : Math.min(
+                this.maxLives,
+                existing?.lives ?? this.roundLives.get(cleanProfile.id) ?? this.maxLives,
+              );
       this.activeMap.set(cleanProfile.id, {
         id: cleanProfile.id,
         name: cleanProfile.name,
@@ -166,7 +244,13 @@ export class MatchRoomCore {
         collectedCount: existing ? existing.collectedCount : 0,
         rank: existing ? existing.rank : 1,
         packOffsetZ: existing ? existing.packOffsetZ : 0,
+        sliding: existing?.sliding,
+        stumbling: existing?.stumbling,
         isBot: cleanProfile.isBot,
+        lives: initialLives,
+        maxLives: this.maxLives,
+        eliminated: existing?.eliminated ?? false,
+        survivedSec: existing?.survivedSec ?? 0,
       });
       return { queuedForNextRound: false };
     }
@@ -190,6 +274,24 @@ export class MatchRoomCore {
     this.activeMap.delete(id);
     this.waitingMap.delete(id);
     this.botSeeds.delete(id);
+    this.silentSec.delete(id);
+    this.disconnectedIds.delete(id);
+  }
+
+  disconnect(id: string) {
+    if (this.phase === 'LOBBY' || this.phase === 'COUNTDOWN') {
+      this.leave(id);
+      return;
+    }
+    this.waitingMap.delete(id);
+    this.silentSec.delete(id);
+    const r = this.activeMap.get(id);
+    if (r && !r.isBot) {
+      this.disconnectedIds.add(id);
+      if (this.phase === 'RUNNING' && this.maxLives > 0 && !r.eliminated) {
+        this.eliminateRunner(id);
+      }
+    }
   }
 
   getRunnerState(id: string): RunnerNetState | undefined {
@@ -198,7 +300,30 @@ export class MatchRoomCore {
 
   updateRunnerState(
     id: string,
-    state: Partial<Pick<RunnerNetState, 'name' | 'role' | 'color' | 'avatar' | 'lane' | 'x' | 'y' | 'd' | 'score' | 'coins' | 'floor' | 'activeCenter' | 'collectedCount' | 'sliding' | 'stumbling'>>,
+    state: Partial<
+      Pick<
+        RunnerNetState,
+        | 'name'
+        | 'role'
+        | 'color'
+        | 'avatar'
+        | 'lane'
+        | 'x'
+        | 'y'
+        | 'd'
+        | 'score'
+        | 'coins'
+        | 'floor'
+        | 'activeCenter'
+        | 'collectedCount'
+        | 'sliding'
+        | 'stumbling'
+        | 'lives'
+        | 'maxLives'
+        | 'eliminated'
+        | 'survivedSec'
+      >
+    >,
   ) {
     const waiting = this.waitingMap.get(id);
     if (waiting) {
@@ -209,10 +334,19 @@ export class MatchRoomCore {
     }
     const r = this.activeMap.get(id);
     if (!r) return; // Ignore positional updates from waitingQueue players
+
+    this.silentSec.set(id, 0);
+    this.disconnectedIds.delete(id);
+
     if (state.name !== undefined) r.name = sanitizeNickname(state.name);
     if (state.role !== undefined) r.role = state.role;
     if (state.color !== undefined) r.color = state.color;
     if (state.avatar !== undefined) r.avatar = sanitizeAvatarId(state.avatar);
+
+    if (r.eliminated) {
+      return;
+    }
+
     if (state.lane !== undefined) r.lane = state.lane;
     if (state.x !== undefined) r.x = state.x;
     if (state.y !== undefined) r.y = state.y;
@@ -224,6 +358,27 @@ export class MatchRoomCore {
     if (state.collectedCount !== undefined) r.collectedCount = state.collectedCount;
     if (state.sliding !== undefined) r.sliding = state.sliding;
     if (state.stumbling !== undefined) r.stumbling = state.stumbling;
+    if (state.survivedSec !== undefined && Number.isFinite(state.survivedSec)) {
+      r.survivedSec = +Math.max(0, state.survivedSec).toFixed(2);
+    }
+    if (state.lives !== undefined) {
+      if (this.maxLives > 0) {
+        const clamped = Math.max(0, Math.min(this.maxLives, Math.floor(state.lives)));
+        r.lives = clamped;
+        this.roundLives.set(id, clamped);
+      } else {
+        r.lives = 0;
+      }
+    }
+    r.maxLives = this.maxLives;
+
+    if (
+      !r.isBot &&
+      (state.eliminated === true ||
+        (this.maxLives > 0 && state.lives !== undefined && state.lives <= 0))
+    ) {
+      this.eliminateRunner(id, state.survivedSec);
+    }
   }
 
   addDemoBots(count = 4) {
@@ -299,6 +454,11 @@ export class MatchRoomCore {
     this.activeMap.clear();
     this.waitingMap.clear();
     this.botSeeds.clear();
+    this.eliminatedIds.clear();
+    this.roundLives.clear();
+    this.joinedAtElapsed.clear();
+    this.silentSec.clear();
+    this.disconnectedIds.clear();
   }
 
   hostCommand(cmd: HostCommand) {
@@ -326,6 +486,35 @@ export class MatchRoomCore {
         this.matchDuration = valid;
         if (this.phase === 'RUNNING') {
           this.phaseTimeLeft = Math.min(this.phaseTimeLeft, valid);
+        }
+        break;
+      }
+      case 'set_max_lives': {
+        const nextMax = sanitizeMaxLives(cmd.maxLives);
+        this.maxLives = nextMax;
+        if (this.phase === 'LOBBY' || this.phase === 'COUNTDOWN') {
+          this.eliminatedIds.clear();
+          this.roundLives.clear();
+          for (const r of this.activeMap.values()) {
+            r.lives = nextMax;
+            r.maxLives = nextMax;
+            r.eliminated = false;
+            r.survivedSec = 0;
+          }
+        } else if (this.phase === 'RUNNING') {
+          for (const [id, r] of this.activeMap.entries()) {
+            if (r.eliminated) continue;
+            r.maxLives = nextMax;
+            if (nextMax === 0) {
+              r.lives = 0;
+            } else {
+              const nextLives = r.isBot
+                ? nextMax
+                : Math.max(1, Math.min(nextMax, r.lives || nextMax));
+              r.lives = nextLives;
+              if (!r.isBot) this.roundLives.set(id, nextLives);
+            }
+          }
         }
         break;
       }
@@ -383,6 +572,17 @@ export class MatchRoomCore {
       this.referenceDistance = distanceAtTime(elapsed, this.matchDuration);
       this.currentFloor = floorAtProgress(p01);
 
+      if (this.maxLives > 0 && dt <= 1.0) {
+        for (const [id, r] of this.activeMap.entries()) {
+          if (r.isBot || r.eliminated) continue;
+          const nextSilent = (this.silentSec.get(id) ?? 0) + dt;
+          this.silentSec.set(id, nextSilent);
+          if (nextSilent > 10.0) {
+            this.eliminateRunner(id);
+          }
+        }
+      }
+
       // Update simulated bots so the shared track & leaderboard stay lively
       for (const [id, r] of this.activeMap.entries()) {
         if (!r.isBot) continue;
@@ -415,6 +615,12 @@ export class MatchRoomCore {
         }
       }
 
+      const humans = Array.from(this.activeMap.values()).filter((r) => !r.isBot);
+      if (this.maxLives > 0 && humans.length > 0 && humans.every((r) => r.eliminated)) {
+        this.enterPodium();
+        return;
+      }
+
       if (this.phaseTimeLeft <= 0) {
         const overflow = -this.phaseTimeLeft;
         this.enterPodium();
@@ -436,7 +642,12 @@ export class MatchRoomCore {
     this.phaseTimeLeft = this.matchDuration;
     this.referenceDistance = 0;
     this.currentFloor = 1;
-    for (const r of this.activeMap.values()) {
+    this.eliminatedIds.clear();
+    this.roundLives.clear();
+    this.joinedAtElapsed.clear();
+    this.silentSec.clear();
+    this.disconnectedIds.clear();
+    for (const [id, r] of this.activeMap.entries()) {
       r.d = 0;
       r.y = 0;
       r.score = 0;
@@ -445,6 +656,17 @@ export class MatchRoomCore {
       r.activeCenter = null;
       r.collectedCount = 0;
       r.packOffsetZ = 0;
+      r.sliding = false;
+      r.stumbling = false;
+      r.lives = this.maxLives;
+      r.maxLives = this.maxLives;
+      r.eliminated = false;
+      r.survivedSec = 0;
+      this.joinedAtElapsed.set(id, 0);
+      this.silentSec.set(id, 0);
+      if (!r.isBot && this.maxLives > 0) {
+        this.roundLives.set(id, this.maxLives);
+      }
     }
   }
 
@@ -468,6 +690,17 @@ export class MatchRoomCore {
     this.referenceDistance = 0;
     this.currentFloor = 1;
 
+    for (const id of this.disconnectedIds) {
+      if (!this.waitingMap.has(id)) {
+        this.activeMap.delete(id);
+      }
+    }
+    this.disconnectedIds.clear();
+    this.eliminatedIds.clear();
+    this.roundLives.clear();
+    this.joinedAtElapsed.clear();
+    this.silentSec.clear();
+
     // Reset existing active runners for the new round
     for (const r of this.activeMap.values()) {
       r.lane = 1;
@@ -480,6 +713,12 @@ export class MatchRoomCore {
       r.activeCenter = null;
       r.collectedCount = 0;
       r.packOffsetZ = 0;
+      r.sliding = false;
+      r.stumbling = false;
+      r.lives = this.maxLives;
+      r.maxLives = this.maxLives;
+      r.eliminated = false;
+      r.survivedSec = 0;
     }
 
     // Promote everyone waiting in waitingQueue into activeMap!
@@ -506,6 +745,10 @@ export class MatchRoomCore {
         rank: 1,
         packOffsetZ: 0,
         isBot: p.isBot,
+        lives: this.maxLives,
+        maxLives: this.maxLives,
+        eliminated: false,
+        survivedSec: 0,
       });
     }
     this.waitingMap.clear();
@@ -513,16 +756,25 @@ export class MatchRoomCore {
 
   getSnapshot(): RoomSnapshot {
     const runners = Array.from(this.activeMap.values()).map((r) => ({ ...r }));
-    runners.sort(
-      (a, b) =>
-        b.score - a.score ||
-        b.d - a.d ||
-        (a.isBot ? 1 : 0) - (b.isBot ? 1 : 0),
-    );
+    const hasHumans = runners.some((r) => !r.isBot);
+    runners.sort((a, b) => {
+      if (hasHumans) {
+        const botDiff = (a.isBot ? 1 : 0) - (b.isBot ? 1 : 0);
+        if (botDiff !== 0) return botDiff;
+      }
+      const elimDiff = (a.eliminated ? 1 : 0) - (b.eliminated ? 1 : 0);
+      if (elimDiff !== 0) return elimDiff;
+      if (a.eliminated && b.eliminated) {
+        const survDiff = (b.survivedSec ?? 0) - (a.survivedSec ?? 0);
+        if (Math.abs(survDiff) > 0.05) return survDiff;
+      }
+      return b.score - a.score || b.d - a.d || (a.isBot ? 1 : 0) - (b.isBot ? 1 : 0);
+    });
 
+    const survivors = runners.filter((r) => !r.eliminated);
     const meanD =
-      runners.length > 0
-        ? runners.reduce((acc, r) => acc + r.d, 0) / runners.length
+      survivors.length > 0
+        ? survivors.reduce((acc, r) => acc + r.d, 0) / survivors.length
         : this.referenceDistance;
     const anchorD = meanD > 0 ? meanD : this.referenceDistance;
 
@@ -538,6 +790,8 @@ export class MatchRoomCore {
       phase: this.phase,
       phaseTimeLeft: +Math.max(0, this.phaseTimeLeft).toFixed(3),
       matchDuration: this.matchDuration,
+      maxLives: this.maxLives,
+      eliminatedIds: Array.from(this.eliminatedIds),
       lobbyHold: this.lobbyHold,
       matchSeed: this.matchSeed,
       referenceDistance: +this.referenceDistance.toFixed(2),
@@ -553,6 +807,7 @@ export class MatchRoomCore {
 export type NetMessage =
   | { type: 'join'; channel?: ChannelId; profile: PlayerProfile; immediate?: boolean }
   | { type: 'leave'; channel?: ChannelId; id: string }
+  | { type: 'disconnect'; channel?: ChannelId; id: string }
   | { type: 'state'; channel?: ChannelId; id: string; state: Partial<RunnerNetState> }
   | { type: 'host'; channel?: ChannelId; command: HostCommand }
   | { type: 'request_sync'; channel?: ChannelId }
@@ -592,6 +847,9 @@ export class MultiChannelRoomRegistry {
     } else if (msg.type === 'leave') {
       room.leave(msg.id);
       urgent = true;
+    } else if (msg.type === 'disconnect') {
+      room.disconnect(msg.id);
+      urgent = true;
     } else if (msg.type === 'state') {
       const prev = room.getRunnerState(msg.id);
       urgent =
@@ -604,6 +862,8 @@ export class MultiChannelRoomRegistry {
         (msg.state.sliding !== undefined && msg.state.sliding !== prev.sliding) ||
         (msg.state.stumbling !== undefined && msg.state.stumbling !== prev.stumbling) ||
         (msg.state.activeCenter !== undefined && msg.state.activeCenter !== prev.activeCenter) ||
+        (msg.state.eliminated !== undefined && msg.state.eliminated !== prev.eliminated) ||
+        (msg.state.lives !== undefined && msg.state.lives !== prev.lives) ||
         (msg.state.y !== undefined && Math.abs(msg.state.y - prev.y) > 0.2);
       room.updateRunnerState(msg.id, msg.state);
     } else if (msg.type === 'host') {
@@ -889,11 +1149,13 @@ export class NetClient {
       }
       return;
     }
-    // Apply joins, leaves, runner states, and host commands to our local room
+    // Apply joins, leaves, disconnects, runner states, and host commands to our local room
     if (msg.type === 'join') {
       this.localRoom.join(msg.profile, { immediate: msg.immediate });
     } else if (msg.type === 'leave') {
       this.localRoom.leave(msg.id);
+    } else if (msg.type === 'disconnect') {
+      this.localRoom.disconnect(msg.id);
     } else if (msg.type === 'state') {
       this.localRoom.updateRunnerState(msg.id, msg.state);
     } else if (msg.type === 'host') {
@@ -1039,6 +1301,28 @@ export class NetClient {
         this.ws.send(JSON.stringify(msg));
       } catch {
         // ignore WS send error
+      }
+    }
+    this.postHttpMessage(msg);
+    this.bc?.postMessage(msg);
+    this.emit();
+  }
+
+  disconnect(id: string) {
+    if (!id) return;
+    const msg: NetMessage = { type: 'disconnect', channel: this.channel, id };
+    this.localRoom.disconnect(id);
+    if (
+      Date.now() - this.lastHttpSyncAt >= 2500 &&
+      (this.isAuthorityTab || Date.now() - this.lastAuthoritySnapshotAt >= 1200)
+    ) {
+      this.latestSnapshot = this.localRoom.getSnapshot();
+    }
+    if (this.wsConnected && this.ws?.readyState === WebSocket.OPEN) {
+      try {
+        this.ws.send(JSON.stringify(msg));
+      } catch {
+        // ignore WS send error; HTTP sync below will deliver
       }
     }
     this.postHttpMessage(msg);

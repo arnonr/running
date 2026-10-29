@@ -42,6 +42,10 @@ function applyIncomingNetMessage(msg: NetMessage, defaultCh: ChannelId = '1', ws
     if (ws) clientPlayerIds.delete(ws);
     registry.applyMessage(msg, targetCh);
     broadcastSnapshot(targetCh);
+  } else if (msg.type === 'disconnect') {
+    if (ws) clientPlayerIds.delete(ws);
+    registry.applyMessage(msg, targetCh);
+    broadcastSnapshot(targetCh);
   } else if (msg.type === 'state') {
     const { urgent } = registry.applyMessage(msg, targetCh);
     if (urgent) {
@@ -205,7 +209,7 @@ wss.on('connection', (ws, req) => {
     const entry = clientPlayerIds.get(ws);
     if (entry) {
       clientPlayerIds.delete(ws);
-      registry.getRoom(entry.channel).leave(entry.id);
+      registry.getRoom(entry.channel).disconnect(entry.id);
       broadcastSnapshot(entry.channel);
     }
   });
