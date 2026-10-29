@@ -10,6 +10,11 @@ import {
   type AvatarId,
 } from '../src/view/avatars';
 import { MatchRoomCore } from '../src/net';
+import {
+  AvatarPreviewStage,
+  shouldRenderAvatarPreview,
+} from '../src/view/avatarPreview';
+import { describeAvatarShowcase } from '../src/ui';
 
 describe('5-Character Selection System (Avatars)', () => {
   it('defines 5 distinct avatars including female characters with cap & backpack removal flags', () => {
@@ -115,5 +120,94 @@ describe('5-Character Selection System (Avatars)', () => {
     const snap2 = room.getSnapshot();
     const playerRunner = snap2.activeRunners.find((r) => r.id === 'p-female');
     expect(playerRunner?.avatar).toBe('may');
+  });
+
+  it('gates live 3D avatar preview strictly to mobile/desktop start form before lobbyReady', () => {
+    expect(shouldRenderAvatarPreview({ isTvMode: false, screen: 'start', lobbyReady: false })).toBe(true);
+    expect(shouldRenderAvatarPreview({ isTvMode: false, screen: 'start', lobbyReady: true })).toBe(false);
+    expect(shouldRenderAvatarPreview({ isTvMode: false, screen: 'play', lobbyReady: false })).toBe(false);
+    expect(shouldRenderAvatarPreview({ isTvMode: true, screen: 'start', lobbyReady: false })).toBe(false);
+  });
+
+  it('updates AvatarPreviewStage avatar, aura color, drag yaw, and restores renderer viewport & scissor cleanly', () => {
+    const mockScene = new THREE.Group();
+    const playerNode = new THREE.Group();
+    playerNode.name = 'player';
+    const head = new THREE.Bone();
+    head.name = 'mixamorig:Head';
+    const hips = new THREE.Bone();
+    hips.name = 'mixamorig:Hips';
+    playerNode.add(head, hips);
+    mockScene.add(playerNode);
+
+    const stage = new AvatarPreviewStage({ scene: mockScene, animations: [] });
+    stage.setAvatar('may');
+    stage.setAuraColor('#ec4899');
+    const yaw0 = stage.getTurntableYaw();
+    stage.rotateBy(0.65);
+    expect(stage.getTurntableYaw()).toBeCloseTo(yaw0 + 0.65, 4);
+
+    const calls: string[] = [];
+    let scissorActive = false;
+    let lastViewport = [0, 0, 0, 0];
+    const fakeRenderer = {
+      domElement: { width: 800, height: 600 } as unknown as HTMLCanvasElement,
+      getPixelRatio: () => 2,
+      getSize: (v: THREE.Vector2) => v.set(400, 300),
+      setViewport: (x: number, y: number, w: number, h: number) => {
+        lastViewport = [x, y, w, h];
+        calls.push(`vp:${x},${y},${w},${h}`);
+      },
+      setScissor: (x: number, y: number, w: number, h: number) => {
+        calls.push(`sc:${x},${y},${w},${h}`);
+      },
+      setScissorTest: (on: boolean) => {
+        scissorActive = on;
+        calls.push(`sct:${on}`);
+      },
+      render: () => {
+        calls.push('render');
+      },
+    };
+    const fakeTarget = {
+      width: 140,
+      height: 150,
+      clientWidth: 140,
+      clientHeight: 150,
+      getContext: () => ({ clearRect: () => {}, drawImage: () => calls.push('drawImage') }),
+    } as unknown as HTMLCanvasElement;
+
+    const ok = stage.renderToCanvas(fakeRenderer as any, fakeTarget, 1 / 60);
+    expect(ok).toBe(true);
+    expect(calls).toContain('render');
+    expect(calls).toContain('drawImage');
+    expect(scissorActive).toBe(false);
+    expect(lastViewport).toEqual([0, 0, 400, 300]);
+
+    // Zero-size and null target canvases must return false without leaving scissor enabled
+    const zeroTarget = {
+      width: 0,
+      height: 0,
+      clientWidth: 0,
+      clientHeight: 0,
+      getContext: () => null,
+    } as unknown as HTMLCanvasElement;
+    expect(stage.renderToCanvas(fakeRenderer as any, zeroTarget, 1 / 60)).toBe(false);
+    expect(stage.renderToCanvas(fakeRenderer as any, null, 1 / 60)).toBe(false);
+    expect(scissorActive).toBe(false);
+  });
+
+  it('builds live showcase metadata reflecting selected avatar, custom nickname, role, aura color, and portrait URL', () => {
+    const vm = describeAvatarShowcase(
+      { id: 'p1', name: 'น้องเมย์', role: 'senior', color: '#ec4899', avatar: 'may' },
+      { may: 'data:image/png;base64,AAA' },
+    );
+    expect(vm.avatarId).toBe('may');
+    expect(vm.titleTh).toContain('เมย์');
+    expect(vm.badgeTh).toContain('หญิง');
+    expect(vm.playerLabelTh).toContain('น้องเมย์');
+    expect(vm.playerLabelTh).toContain('ม.ปลาย');
+    expect(vm.auraHex).toBe('#ec4899');
+    expect(vm.portraitUrl).toBe('data:image/png;base64,AAA');
   });
 });

@@ -11,9 +11,41 @@ import {
 import {
   AVATARS, AVATAR_LIST, sanitizeAvatarId, type AvatarId,
 } from './view/avatars';
+import type { AvatarPortraits } from './view/avatarPreview';
 import { buildJoinQrSvg, resolveMobileJoinUrl } from './qr';
 
 export type Screen = 'start' | 'countdown' | 'play' | 'pause' | 'over';
+
+export interface AvatarShowcaseViewModel {
+  avatarId: AvatarId;
+  titleTh: string;
+  badgeTh: string;
+  playerLabelTh: string;
+  accentHex: string;
+  auraHex: string;
+  portraitUrl: string | null;
+  icon: string;
+}
+
+export function describeAvatarShowcase(
+  profile: PlayerProfile,
+  portraits?: AvatarPortraits,
+): AvatarShowcaseViewModel {
+  const avatarId = sanitizeAvatarId(profile.avatar);
+  const meta = AVATARS[avatarId];
+  const roleTh = ROLE_LABELS[profile.role] ?? ROLE_LABELS.senior;
+  const cleanName = (profile.name || '').trim() || `${meta.nameTh} Techno`;
+  return {
+    avatarId,
+    titleTh: `${meta.icon} ${meta.nameTh}`,
+    badgeTh: `${meta.genderLabelTh} · ${meta.roleBadgeTh}`,
+    playerLabelTh: `${cleanName} (${roleTh})`,
+    accentHex: meta.accentHex,
+    auraHex: profile.color || '#38bdf8',
+    portraitUrl: portraits?.[avatarId] ?? null,
+    icon: meta.icon,
+  };
+}
 
 export interface ExhibitionCenterItem extends CenterMeta {
   unlocked: boolean;
@@ -54,6 +86,8 @@ export interface UIHandlers {
   joinQueue(profile: PlayerProfile): void;
   playSoloNow(profile: PlayerProfile): void;
   selectAvatar?(avatarId: AvatarId, profile: PlayerProfile): void;
+  onPreviewRotate?(deltaRad: number): void;
+  onPreviewTap?(): void;
   selectChannel?(ch: ChannelId): void;
   profileChange?(profile: PlayerProfile): void;
   editProfile?(): void;
@@ -85,6 +119,7 @@ export class UI {
   private tvMode = false;
   private lobbyReady = false;
   private channel: ChannelId = '1';
+  private portraits: AvatarPortraits = {};
 
   constructor(
     root: HTMLElement,
@@ -122,6 +157,7 @@ export class UI {
     ).join('');
 
     const currentAvatar = sanitizeAvatarId(this.profile.avatar);
+    const showcaseVm = describeAvatarShowcase(this.profile, this.portraits);
     const defaultAvatarNames = new Set([
       'นักวิ่ง Techno',
       ...AVATAR_LIST.map((a) => `${a.nameTh} Techno`),
@@ -130,6 +166,7 @@ export class UI {
     const avatarsHtml = AVATAR_LIST.map(
       (av) =>
         `<button type="button" class="avatar-card ${currentAvatar === av.id ? 'on' : ''}" data-avatar="${av.id}" style="--av-accent:${av.accentHex}">
+          <img class="av-thumb" alt="${av.nameTh}" />
           <span class="av-ico">${av.icon}</span>
           <b class="av-name">${av.nameTh}</b>
           <small class="av-sub">${av.genderLabelTh} · ${av.roleBadgeTh}</small>
@@ -240,6 +277,22 @@ export class UI {
 
           <div class="form-row">
             <label>2. เลือกตัวละครนักวิ่ง 3D (5 สไตล์ · ชาย / หญิง / ชุดอวกาศ)</label>
+            <div class="avatar-showcase" id="avatar-showcase" style="--av-accent:${showcaseVm.accentHex}">
+              <div class="av-stage-wrap" id="av-stage-wrap" title="ลากเพื่อหมุนดูตัวละคร 360° หรือแตะเพื่อโพสท่า">
+                <canvas id="avatar-preview-canvas"></canvas>
+                <span class="av-stage-hint">🔄 ลากหมุน 360°</span>
+              </div>
+              <div class="av-info">
+                <span class="av-info-kicker">✨ ตัวอย่างตัวละคร 3D ของคุณ</span>
+                <b class="av-info-title" id="av-show-title">${showcaseVm.titleTh}</b>
+                <span class="av-info-badge" id="av-show-badge">${showcaseVm.badgeTh}</span>
+                <div class="av-info-pill" id="av-show-pill">
+                  <span class="pp-dot" id="av-show-dot" style="background:${showcaseVm.auraHex}"></span>
+                  <span id="av-show-player">${showcaseVm.playerLabelTh}</span>
+                </div>
+                <small style="font-size:10.5px;color:#94a3b8;line-height:1.25">แตะตัวละครเพื่อกระโดดโพสท่า · ลากซ้าย-ขวาหมุนดูชุดรอบตัว</small>
+              </div>
+            </div>
             <div class="avatar-grid" id="avatar-grid">${avatarsHtml}</div>
           </div>
 
@@ -437,6 +490,41 @@ export class UI {
       });
     });
 
+    const stageWrap = this.el['av-stage-wrap'];
+    if (stageWrap) {
+      let activePointerId: number | null = null;
+      let lastX = 0;
+      let movedPx = 0;
+      stageWrap.addEventListener('pointerdown', (ev) => {
+        ev.stopPropagation();
+        activePointerId = ev.pointerId;
+        lastX = ev.clientX;
+        movedPx = 0;
+        try { stageWrap.setPointerCapture?.(ev.pointerId); } catch { /* ignore */ }
+      });
+      stageWrap.addEventListener('pointermove', (ev) => {
+        if (activePointerId !== ev.pointerId) return;
+        ev.stopPropagation();
+        const dx = ev.clientX - lastX;
+        lastX = ev.clientX;
+        movedPx += Math.abs(dx);
+        if (dx !== 0) {
+          this.handlers.onPreviewRotate?.(dx * 0.018);
+        }
+      });
+      const finishDrag = (ev: PointerEvent, allowTap: boolean) => {
+        if (activePointerId !== ev.pointerId) return;
+        ev.stopPropagation();
+        activePointerId = null;
+        try { stageWrap.releasePointerCapture?.(ev.pointerId); } catch { /* ignore */ }
+        if (allowTap && movedPx < 6) {
+          this.handlers.onPreviewTap?.();
+        }
+      };
+      stageWrap.addEventListener('pointerup', (ev) => finishDrag(ev, true));
+      stageWrap.addEventListener('pointercancel', (ev) => finishDrag(ev, false));
+    }
+
     this.root.querySelectorAll<HTMLButtonElement>('[data-ch]').forEach((btn) => {
       btn.addEventListener('click', (ev) => {
         ev.stopPropagation();
@@ -520,6 +608,51 @@ export class UI {
     if (this.el['hud-player-dot']) {
       this.el['hud-player-dot'].style.background = this.profile.color;
     }
+
+    const vm = describeAvatarShowcase(this.profile, this.portraits);
+    if (this.el['avatar-showcase']) {
+      this.el['avatar-showcase'].style.setProperty('--av-accent', vm.accentHex);
+    }
+    if (this.el['av-show-title']) {
+      this.el['av-show-title'].textContent = vm.titleTh;
+    }
+    if (this.el['av-show-badge']) {
+      this.el['av-show-badge'].textContent = vm.badgeTh;
+    }
+    if (this.el['av-show-player']) {
+      this.el['av-show-player'].textContent = vm.playerLabelTh;
+    }
+    if (this.el['av-show-dot']) {
+      this.el['av-show-dot'].style.background = vm.auraHex;
+    }
+  }
+
+  setAvatarPortraits(portraits: AvatarPortraits) {
+    this.portraits = { ...portraits };
+    this.el['avatar-grid']?.querySelectorAll<HTMLButtonElement>('[data-avatar]').forEach((btn) => {
+      const avId = sanitizeAvatarId(btn.dataset.avatar);
+      const url = this.portraits[avId];
+      const img = btn.querySelector<HTMLImageElement>('.av-thumb');
+      if (img && url) {
+        img.src = url;
+        btn.classList.add('has-thumb');
+      } else {
+        btn.classList.remove('has-thumb');
+      }
+    });
+    this.updatePlayerPill();
+  }
+
+  getAvatarPreviewCanvas(): HTMLCanvasElement | null {
+    return (this.el['avatar-preview-canvas'] as HTMLCanvasElement | undefined) ?? null;
+  }
+
+  isStartFormVisible(): boolean {
+    return !this.tvMode && this.screen === 'start' && !this.lobbyReady;
+  }
+
+  isLobbyReady(): boolean {
+    return this.lobbyReady;
   }
 
   private buildQrSvg(): string {

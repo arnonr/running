@@ -79,7 +79,8 @@ describe('10-Floor Zone & 9-Center Open-Horizon Biome Palettes', () => {
             createRadialGradient: () => ({ addColorStop: () => {} }),
           },
           {
-            get: (target, prop) => (prop in target ? target[prop] : () => ctx),
+            get: (target: Record<PropertyKey, unknown>, prop) =>
+              prop in target ? target[prop] : () => ctx,
             set: () => true,
           },
         );

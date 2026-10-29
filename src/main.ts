@@ -16,6 +16,7 @@ import {
   type PlayerProfile, type RoomSnapshot, type ChannelId,
 } from './net';
 import { sanitizeAvatarId, AVATARS } from './view/avatars';
+import { AvatarPreviewStage, shouldRenderAvatarPreview } from './view/avatarPreview';
 import type { SimEvent, CenterId } from './sim/types';
 
 const params = new URLSearchParams(location.search);
@@ -74,6 +75,7 @@ async function main() {
   setLoaderProgress(0.92, 'พร้อมทะยานสู่ชั้น 10!');
   await nextFrame();
 
+  const avatarPreview = new AvatarPreviewStage(core);
   const world = new World(core, { shadowSize: mobile ? 1024 : 2048 });
   const sim = new Sim(202610);
   const audio = new Audio();
@@ -89,6 +91,8 @@ async function main() {
   savedProfile.avatar = sanitizeAvatarId(savedProfile.avatar);
   world.player.setAvatar(savedProfile.avatar);
   world.player.setProfileBadge(savedProfile.name, 1, savedProfile.color);
+  avatarPreview.setAvatar(savedProfile.avatar);
+  avatarPreview.setAuraColor(savedProfile.color);
 
   const net = new NetClient(isTvMode, currentChannel);
   let latestRoom: RoomSnapshot = net.getSnapshot();
@@ -126,6 +130,8 @@ async function main() {
     save('profile', savedProfile);
     world.player.setAvatar(savedProfile.avatar);
     world.player.setProfileBadge(savedProfile.name, 1, savedProfile.color);
+    avatarPreview.setAvatar(savedProfile.avatar);
+    avatarPreview.setAuraColor(savedProfile.color);
   };
 
   const ui = new UI(
@@ -201,11 +207,20 @@ async function main() {
         applyProfileUpdate({ ...prof, avatar: sanitizeAvatarId(avatarId) });
         ui.updatePlayerPill(savedProfile);
         world.player.warmUpAction('up');
+        avatarPreview.triggerCelebratePose();
         const meta = AVATARS[sanitizeAvatarId(savedProfile.avatar)];
         ui.toast(`${meta.icon} เลือกตัวละคร: ${meta.nameTh} (${meta.genderLabelTh})`, 1400);
         if (hasJoinedLobby && !isTvMode) {
           net.join(savedProfile, { immediate: true });
         }
+      },
+      onPreviewRotate: (deltaRad) => {
+        avatarPreview.rotateBy(deltaRad);
+      },
+      onPreviewTap: () => {
+        audio.unlock();
+        audio.jump(false);
+        avatarPreview.triggerCelebratePose();
       },
       resume: () => {
         if (state !== 'pause') return;
@@ -615,11 +630,24 @@ async function main() {
       });
     }
 
-    if (draw) renderer.render(world.scene, world.camera);
+    if (draw) {
+      if (
+        shouldRenderAvatarPreview({
+          isTvMode,
+          screen: state,
+          lobbyReady: ui.isLobbyReady(),
+        })
+      ) {
+        avatarPreview.renderToCanvas(renderer, ui.getAvatarPreviewCanvas(), dt);
+      }
+      renderer.render(world.scene, world.camera);
+    }
   }
 
   world.sync(sim, 0, true, latestRoom.activeRunners, savedProfile.id, isTvMode);
   world.warm(renderer);
+  ui.setAvatarPortraits(avatarPreview.capturePortraits(renderer));
+  renderer.render(world.scene, world.camera);
   setLoaderProgress(1, 'พร้อมลุย!');
   ui.show(isTvMode ? 'play' : 'start');
   removeLoader();
