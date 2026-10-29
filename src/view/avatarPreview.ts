@@ -94,12 +94,10 @@ export class AvatarPreviewStage {
     this.auraRing.position.y = 0.012;
     this.scene.add(this.auraRing);
 
-    // Clone 'player' before or after World construction without mutating the source hierarchy
+    // Clone 'player' before or after World construction while preserving GLTF Armature rotation (+π/2 X) and scale (0.01)
     const srcNode = source.scene.getObjectByName('player') ?? source.scene;
     this.character = cloneSkinned(srcNode);
     this.character.position.set(0, 0, 0);
-    this.character.rotation.set(0, 0, 0);
-    this.character.scale.set(1, 1, 1);
     this.character.traverse((o) => {
       const m = o as THREE.Mesh;
       if (m.isMesh) {
@@ -162,6 +160,10 @@ export class AvatarPreviewStage {
   setAvatar(rawAvatarId: AvatarId): void {
     const nextId = sanitizeAvatarId(rawAvatarId);
     this.avatarId = nextId;
+    if (this.character.userData.avatarId === nextId) {
+      this.rimLight.color.set(AVATARS[nextId].accentHex);
+      return;
+    }
     applyAvatarToCharacter(this.character, nextId);
     this.rimLight.color.set(AVATARS[nextId].accentHex);
     updateAvatarMotion(this.character, this.time, false);
@@ -175,13 +177,10 @@ export class AvatarPreviewStage {
 
   triggerCelebratePose(): void {
     if (this.actions.jump) {
-      const jump = this.actions.jump;
-      jump.stop();
-      this.currentClip = null;
+      this.actions.jump.stop();
       this.playClip('jump', 0.08);
     } else if (this.actions.jumpup) {
       this.actions.jumpup.stop();
-      this.currentClip = null;
       this.playClip('jumpup', 0.08);
     }
   }
@@ -233,7 +232,8 @@ export class AvatarPreviewStage {
     const fullH = this.fullSizeTmp.y;
     if (fullW < 16 || fullH < 16) return false;
 
-    const pr = Math.max(1, renderer.getPixelRatio() || 1);
+    const rawPr = renderer.getPixelRatio();
+    const pr = rawPr > 0 ? rawPr : 1;
     const hasClientSize = targetCanvas.clientWidth > 0 && targetCanvas.clientHeight > 0;
     const hasBitmapOnlySize =
       !hasClientSize && targetCanvas.width > 0 && targetCanvas.height > 0;

@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import * as THREE from 'three';
 import {
   AVATAR_LIST,
@@ -209,5 +211,133 @@ describe('5-Character Selection System (Avatars)', () => {
     expect(vm.playerLabelTh).toContain('ม.ปลาย');
     expect(vm.auraHex).toBe('#ec4899');
     expect(vm.portraitUrl).toBe('data:image/png;base64,AAA');
+  });
+
+  it('preserves GLTF player Armature rotation (π/2 X) and cm-to-meter scale (0.01) so character stays ~1.8m upright', () => {
+    const mockScene = new THREE.Group();
+    const playerNode = new THREE.Group();
+    playerNode.name = 'player';
+    playerNode.rotation.set(Math.PI / 2, 0, 0);
+    playerNode.scale.set(0.01, 0.01, 0.01);
+    playerNode.position.set(3, 4, 5);
+
+    // In Mixamo Z-up cm space (rotated +π/2 around X -> local -Z maps to world +Y):
+    // A 180cm mesh centered at local z = -90 spans local z ∈ [-180, 0] -> world y ∈ [0, 1.80]m
+    const bodyGeo = new THREE.BoxGeometry(50, 30, 180);
+    bodyGeo.translate(0, 0, -90);
+    const bodyMesh = new THREE.Mesh(bodyGeo, new THREE.MeshBasicMaterial());
+    playerNode.add(bodyMesh);
+    mockScene.add(playerNode);
+
+    const stage = new AvatarPreviewStage({ scene: mockScene, animations: [] });
+    stage.scene.updateMatrixWorld(true);
+
+    let clonedMesh: THREE.Mesh | null = null;
+    stage.scene.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh && (o as THREE.Mesh).geometry === bodyGeo) {
+        clonedMesh = o as THREE.Mesh;
+      }
+    });
+    expect(clonedMesh).not.toBeNull();
+    const box = new THREE.Box3().setFromObject(clonedMesh!);
+    const heightMeters = box.max.y - box.min.y;
+    expect(heightMeters).toBeGreaterThan(1.7);
+    expect(heightMeters).toBeLessThan(1.9);
+    expect(box.min.y).toBeCloseTo(0, 2);
+  });
+
+  it('fades out idle clip when triggerCelebratePose plays jump instead of blending idle at full weight', () => {
+    const mockScene = new THREE.Group();
+    const playerNode = new THREE.Group();
+    playerNode.name = 'player';
+    mockScene.add(playerNode);
+
+    const idleClip = new THREE.AnimationClip('idle', 1.0, [
+      new THREE.NumberKeyframeTrack('.position[y]', [0, 1], [0, 0]),
+    ]);
+    const jumpClip = new THREE.AnimationClip('jump', 0.8, [
+      new THREE.NumberKeyframeTrack('.position[y]', [0, 0.4, 0.8], [0, 0.5, 0]),
+    ]);
+
+    const stage = new AvatarPreviewStage({ scene: mockScene, animations: [idleClip, jumpClip] });
+    stage.triggerCelebratePose();
+    // Advance past the 0.08s cross-fade window while still mid-jump (< 0.8s)
+    stage.step(0.15);
+
+    const actions = (stage as any).actions as Record<string, THREE.AnimationAction>;
+    expect(actions.jump.getEffectiveWeight()).toBeGreaterThan(0.95);
+    expect(actions.idle.getEffectiveWeight()).toBeLessThan(0.05);
+  });
+
+  it('aligns drawImage source rectangle accurately when renderer pixelRatio is below 1 (zoomed-out browser)', () => {
+    const mockScene = new THREE.Group();
+    const stage = new AvatarPreviewStage({ scene: mockScene, animations: [] });
+
+    let drawArgs: number[] = [];
+    const fakeRenderer = {
+      domElement: { width: 300, height: 225 } as unknown as HTMLCanvasElement,
+      getPixelRatio: () => 0.75,
+      getSize: (v: THREE.Vector2) => v.set(400, 300),
+      setViewport: () => {},
+      setScissor: () => {},
+      setScissorTest: () => {},
+      render: () => {},
+    };
+    const fakeTarget = {
+      width: 120,
+      height: 140,
+      clientWidth: 120,
+      clientHeight: 140,
+      getContext: () => ({
+        clearRect: () => {},
+        drawImage: (_img: unknown, sx: number, sy: number, sw: number, sh: number) => {
+          drawArgs = [sx, sy, sw, sh];
+        },
+      }),
+    } as unknown as HTMLCanvasElement;
+
+    expect(stage.renderToCanvas(fakeRenderer as any, fakeTarget, 0)).toBe(true);
+    expect(drawArgs).toEqual([0, 0, 90, 105]);
+  });
+
+  it('skips redundant 3D bone-costume rebuilds when setAvatar is called repeatedly with the same avatarId', () => {
+    const mockScene = new THREE.Group();
+    const playerNode = new THREE.Group();
+    playerNode.name = 'player';
+    const head = new THREE.Bone();
+    head.name = 'mixamorig:Head';
+    playerNode.add(head);
+    mockScene.add(playerNode);
+
+    const stage = new AvatarPreviewStage({ scene: mockScene, animations: [] });
+    stage.setAvatar('may');
+
+    let clonedHead: THREE.Object3D | null = null;
+    stage.scene.traverse((o) => {
+      if (o.name === 'mixamorig:Head') clonedHead = o;
+    });
+    expect(clonedHead).not.toBeNull();
+    const firstCostume = clonedHead!.children.find((c) => c.userData.isAvatarCostume);
+    expect(firstCostume).toBeDefined();
+
+    // Repeated call with same avatarId (e.g., on nickname input / aura color click) must keep exact instance
+    stage.setAvatar('may');
+    const secondCostume = clonedHead!.children.find((c) => c.userData.isAvatarCostume);
+    expect(secondCostume).toBe(firstCostume);
+
+    // Switching to a different avatarId must attach the new avatar's costume
+    stage.setAvatar('praw');
+    const thirdCostume = clonedHead!.children.find((c) => c.userData.isAvatarCostume);
+    expect(thirdCostume).toBeDefined();
+    expect(thirdCostume).not.toBe(firstCostume);
+  });
+
+  it('constrains .avatar-card and .av-thumb fluidly in index.html so 5 cards do not overflow 360px mobile panels', () => {
+    const html = readFileSync(resolve(__dirname, '../index.html'), 'utf8');
+    const cardMatch = html.match(/\.avatar-card\s*\{[^}]*\}/);
+    const thumbMatch = html.match(/\.avatar-card\s+\.av-thumb\s*\{[^}]*\}/);
+    expect(cardMatch?.[0]).toContain('min-width: 0');
+    expect(thumbMatch?.[0]).toContain('min(44px, 100%)');
+    expect(thumbMatch?.[0]).toContain('aspect-ratio: 1');
   });
 });
