@@ -187,4 +187,52 @@ describe('TV Mode 60 FPS Smooth Clock & Badge Cache', () => {
     expect(Array.isArray(a1[1].userData.animNodes)).toBe(true);
     expect(a1[1].userData.animNodes.length).toBeGreaterThan(0);
   });
+
+  it('collects coins and 9-Center capsules for TV ghost runners (including magnet pull and height bounds) without affecting mobile Sim', () => {
+    const tvSim = new Sim(202610);
+    const mobileSim = new Sim(202610);
+    tvSim.noSpawn = true;
+    mobileSim.noSpawn = true;
+    tvSim.reset(202610, false, 180);
+    mobileSim.reset(202610, false, 180);
+    tvSim.coinList.length = 0;
+    mobileSim.coinList.length = 0;
+
+    // Ground coin at lane 1, d = 50, y = 0.85; roof coin at lane 1, d = 50, y = 3.5; capsule at lane 1, d = 50.2
+    tvSim.addCoin(1, 50, 0.85);
+    tvSim.addCoin(1, 50, 3.5);
+    tvSim.addCenterPickup(4, 1, 50.2, 1.15);
+
+    mobileSim.addCoin(1, 50, 0.85);
+    mobileSim.addCoin(1, 50, 3.5);
+    mobileSim.addCenterPickup(4, 1, 50.2, 1.15);
+
+    // Ground runner at (lane 1, y = 0, d = 50) collects ground coin + capsule #4, but NOT the roof coin (y = 3.5)
+    const res1 = tvSim.collectGhostPickupsAt(laneX(1), 0, 50, false, null, 1 / 60);
+    expect(res1.coins).toBe(1);
+    expect(res1.centers).toEqual([4]);
+    expect(tvSim.coinList).toHaveLength(1);
+    expect(tvSim.coinList[0].y).toBeCloseTo(3.5, 2);
+    expect(tvSim.pickups).toHaveLength(0);
+
+    // Mobile Sim still has all 2 coins and 1 capsule untouched
+    expect(mobileSim.coinList).toHaveLength(2);
+    expect(mobileSim.pickups).toHaveLength(1);
+
+    // Magnet pull: coin at lane 0, d = 62, y = 0.85; distant coin at d = 95
+    tvSim.addCoin(0, 62, 0.85);
+    tvSim.addCoin(0, 95, 0.85);
+    // Runner at lane 1, d = 55 with Center #5 (1.5x magnet range) pulls the d=62 coin closer, leaves d=95 coin untouched
+    tvSim.collectGhostPickupsAt(laneX(1), 0, 55, false, 5, 1 / 60);
+    const pulledCoin = tvSim.coinList.find((c) => c.d < 62 && c.d > 54);
+    const farCoin = tvSim.coinList.find((c) => c.d === 95);
+    expect(pulledCoin?.pulled).toBe(true);
+    expect(farCoin?.pulled).toBe(false);
+  });
+
+  it('builds a 3D leader crown mesh for Rank #1 on TV', async () => {
+    const { createLeaderCrownMesh } = await import('../src/view/world');
+    const crown = createLeaderCrownMesh();
+    expect(crown.children.length).toBeGreaterThanOrEqual(4);
+  });
 });

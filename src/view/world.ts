@@ -80,9 +80,57 @@ interface GhostSlot {
   ring: THREE.Mesh;
   badge: THREE.Sprite;
   badgeKey: string;
+  crown: THREE.Group;
   x: number;
   y: number;
   z: number;
+}
+
+let sharedCrownGoldMat: THREE.MeshStandardMaterial | null = null;
+let sharedCrownJewelMat: THREE.MeshBasicMaterial | null = null;
+let sharedCrownHaloMat: THREE.MeshBasicMaterial | null = null;
+
+/** Build a 3D Golden Crown mesh for the Rank #1 leader on the TV Arena. */
+export function createLeaderCrownMesh(): THREE.Group {
+  if (!sharedCrownGoldMat) {
+    sharedCrownGoldMat = new THREE.MeshStandardMaterial({
+      color: 0xfacc15,
+      emissive: 0xd97706,
+      emissiveIntensity: 0.55,
+      metalness: 0.75,
+      roughness: 0.25,
+    });
+    sharedCrownJewelMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+    sharedCrownHaloMat = new THREE.MeshBasicMaterial({
+      color: 0xfef08a,
+      transparent: true,
+      opacity: 0.72,
+    });
+  }
+  const crown = new THREE.Group();
+  crown.position.set(0, 2.42, 0);
+
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.2, 0.11, 16), sharedCrownGoldMat);
+  crown.add(base);
+
+  const spikeGeo = new THREE.ConeGeometry(0.065, 0.16, 8);
+  for (let s = 0; s < 4; s++) {
+    const angle = (s * Math.PI) / 2;
+    const spike = new THREE.Mesh(spikeGeo, sharedCrownGoldMat);
+    spike.position.set(Math.cos(angle) * 0.2, 0.12, Math.sin(angle) * 0.2);
+    crown.add(spike);
+  }
+
+  const jewel = new THREE.Mesh(new THREE.OctahedronGeometry(0.055, 0), sharedCrownJewelMat!);
+  jewel.position.set(0, 0.22, 0);
+  crown.add(jewel);
+
+  const halo = new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.018, 8, 24), sharedCrownHaloMat!);
+  halo.rotation.x = Math.PI / 2;
+  halo.position.y = -0.04;
+  crown.add(halo);
+
+  return crown;
 }
 
 export class World {
@@ -1191,7 +1239,10 @@ export class World {
       badge.scale.set(1.45, 0.36, 1);
       badge.position.set(0, 2.05, 0);
 
-      group.add(charClone, ring, badge);
+      const crown = createLeaderCrownMesh();
+      crown.visible = false;
+
+      group.add(charClone, ring, badge, crown);
       scene.add(group);
       this.ghostSlots.push({
         group,
@@ -1216,6 +1267,7 @@ export class World {
         ring,
         badge,
         badgeKey: '',
+        crown,
         x: laneX(i % 3),
         y: 0,
         z: -4 - i * 3,
@@ -1711,6 +1763,8 @@ export class World {
       }
 
       if (isRunning && g.eliminated) {
+        slot.crown.visible = false;
+        slot.ring.scale.setScalar(1);
         if (slot.eliminatedTimer === 0) {
           this.fx.burst(slot.x, slot.y + 0.9, slot.z, 26, 0xf43f5e, {
             speed: 5.5, up: 3.4, size: 0.58, life: 0.55,
@@ -1850,6 +1904,21 @@ export class World {
       slot.squash = Math.max(0, slot.squash - dt * 1.4);
       slot.group.position.set(slot.x, slot.y, slot.z);
 
+      // TV-side coin & 9-Center capsule collection so ghost runners visibly pick up coins/items instead of running through them
+      if (tvMode && isRunning && !g.eliminated) {
+        const picked = sim.collectGhostPickupsAt(slot.x, slot.y, slotD, effectiveSliding, g.activeCenter, dt);
+        if (picked.coins > 0) {
+          this.fx.burst(slot.x, slot.y + 0.85, slot.z, 5, 0xffd75a, {
+            speed: 2.4, up: 1.5, size: 0.4, life: 0.35, grav: 3,
+          });
+        }
+        for (const cid of picked.centers) {
+          this.fx.burst(slot.x, slot.y + 1.0, slot.z, 22, CENTERS[cid].color, {
+            speed: 4.8, up: 2.6, size: 0.55, life: 0.55, grav: 2,
+          });
+        }
+      }
+
       // Update 3D 9-Center power-up attachments & particle bursts on TV
       const shownCenter = !isRunning && g.eliminated ? null : g.activeCenter;
       updateCenterAttachments(slot.attachments, shownCenter, this.time + i * 0.4);
@@ -1972,7 +2041,17 @@ export class World {
       slot.charClone.rotation.set(0, Math.PI - slot.lean * 0.35, stumbleRoll);
 
       const col = g.activeCenter ? CENTERS[g.activeCenter].color : g.color;
-      (slot.ring.material as THREE.MeshBasicMaterial).color.set(col);
+      const isLeader = isRunning && !g.eliminated && g.rank === 1;
+      slot.crown.visible = isLeader;
+      if (isLeader) {
+        slot.crown.rotation.y = this.time * 2.4;
+        slot.crown.position.y = 2.42 + Math.sin(this.time * 4.5) * 0.08;
+        slot.ring.scale.setScalar(1.22 + Math.sin(this.time * 6) * 0.06);
+        (slot.ring.material as THREE.MeshBasicMaterial).color.set(g.activeCenter ? col : 0xfacc15);
+      } else {
+        slot.ring.scale.setScalar(1);
+        (slot.ring.material as THREE.MeshBasicMaterial).color.set(col);
+      }
 
       const badgeKey = `${g.rank}:${g.name}:${col}`;
       if (slot.badgeKey !== badgeKey) {

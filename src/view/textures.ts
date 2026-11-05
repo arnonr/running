@@ -625,23 +625,26 @@ export function nameBadgeTexture(name: string, rank: number, color: string) {
     created = new THREE.CanvasTexture({ width: W, height: H } as unknown as HTMLCanvasElement);
   } else {
     const { c, g } = canvas(W, H);
-    g.fillStyle = 'rgba(15, 23, 42, 0.88)';
+    const isRankOne = rank === 1;
+    const borderCol = isRankOne ? '#facc15' : color;
+    g.fillStyle = isRankOne ? 'rgba(15, 23, 42, 0.94)' : 'rgba(15, 23, 42, 0.88)';
     round(g, 4, 6, W - 8, H - 12, 24);
     g.fill();
-    g.lineWidth = 4;
-    g.strokeStyle = color;
+    g.lineWidth = isRankOne ? 5 : 4;
+    g.strokeStyle = borderCol;
     round(g, 4, 6, W - 8, H - 12, 24);
     g.stroke();
 
-    g.fillStyle = color;
+    g.fillStyle = borderCol;
     g.font = 'bold 23px system-ui, sans-serif';
     g.textAlign = 'left';
     g.textBaseline = 'middle';
-    g.fillText(`#${rank}`, 18, H / 2);
+    g.fillText(isRankOne ? '👑 #1' : `#${rank}`, 18, H / 2);
 
-    g.fillStyle = '#ffffff';
+    g.fillStyle = isRankOne ? '#fef08a' : '#ffffff';
     g.font = 'bold 21px system-ui, sans-serif';
-    g.fillText(shortName, 68, H / 2, W - 84);
+    const nameX = isRankOne ? 92 : 68;
+    g.fillText(shortName, nameX, H / 2, W - nameX - 14);
     created = tex(c, false);
   }
 

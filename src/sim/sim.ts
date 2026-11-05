@@ -12,6 +12,11 @@ export type { Spec };
 const MAX_STEP = 1 / 120;
 const easeOut = (t: number) => 1 - (1 - t) * (1 - t) * (1 - t);
 
+export interface GhostPickupResult {
+  coins: number;
+  centers: CenterId[];
+}
+
 export interface SimSnapshot {
   lane: number;
   x: number;
@@ -953,6 +958,57 @@ export class Sim {
         this.pickups.splice(i, 1);
       }
     }
+  }
+
+  /** Collect track coins and 9-Center capsules for a TV ghost runner at (x, y, d) without altering player score. */
+  public collectGhostPickupsAt(
+    x: number,
+    y: number,
+    d: number,
+    sliding: boolean,
+    activeCenter: CenterId | null,
+    dt: number,
+  ): GhostPickupResult {
+    const h = sliding ? PLAYER.slideHeight : PLAYER.height;
+    const magnet = activeCenter === 1 || activeCenter === 2 || activeCenter === 5 || activeCenter === 9;
+    const magnetRange = activeCenter === 5 || activeCenter === 9 ? MAGNET_RANGE * 1.5 : MAGNET_RANGE;
+    let coins = 0;
+    const centers: CenterId[] = [];
+
+    for (let i = this.coinList.length - 1; i >= 0; i--) {
+      const c = this.coinList[i];
+      const ahead = c.d - d;
+      if (ahead > magnetRange + 2) continue;
+      if (magnet && ahead < magnetRange && ahead > -2) c.pulled = true;
+      if (c.pulled) {
+        const k = Math.min(1, dt * 15);
+        c.x += (x - c.x) * k;
+        c.y += (y + 1 - c.y) * k;
+        c.d += (d - c.d) * k;
+      }
+      if (Math.abs(c.d - d) < 1.15 && Math.abs(c.x - x) < 1.15 && c.y > y - 0.7 && c.y < y + h + 0.8) {
+        coins++;
+        this.freeCoins.push(c);
+        this.coinList.splice(i, 1);
+      }
+    }
+
+    for (let i = this.pickups.length - 1; i >= 0; i--) {
+      const cp = this.pickups[i];
+      const cx = laneX(cp.lane);
+      const yMatch = activeCenter === 1 || Math.abs(cp.y - (y + h * 0.5)) < 2.5;
+      if (
+        Math.abs(cp.d - d) < PICKUP_PULL_RANGE * 0.65 &&
+        Math.abs(cx - x) < PICKUP_PULL_RANGE * 0.65 &&
+        yMatch
+      ) {
+        centers.push(cp.centerId);
+        this.freePickups.push(cp);
+        this.pickups.splice(i, 1);
+      }
+    }
+
+    return { coins, centers };
   }
 
   private hints() {
