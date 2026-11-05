@@ -7,6 +7,7 @@ import { Audio } from './audio';
 import { bindInput, type Action } from './input';
 import {
   UI,
+  TvBroadcastTracker,
   canResumeFromPause,
   shouldCancelDeathReveal,
   shouldEvictToLobbyOnSnapshot,
@@ -118,6 +119,9 @@ async function main() {
   let confirmedInRoom = false;
   let joinPendingUntil = 0;
   let joinPendingMatchId = -1;
+  const tvTracker = new TvBroadcastTracker();
+  let tvSprintMatchId = -1;
+  let tvLastFinalBeepSec = -1;
   const horned = new Set<number>();
 
   function clearDeathRevealTimer() {
@@ -478,6 +482,36 @@ async function main() {
     const prevPhase = latestRoom.phase;
     latestRoom = snap;
     ui.updateRoomSnapshot(snap, savedProfile.id);
+
+    if (isTvMode) {
+      const tvEvents = tvTracker.update(snap, performance.now() / 1000);
+      ui.pushTvBroadcastEvents(tvEvents);
+      for (const ev of tvEvents) {
+        if (ev.kind === 'lead') audio.leadChange();
+        else if (ev.kind === 'power' && ev.centerId) audio.centerPower(ev.centerId);
+        else if (ev.kind === 'last_heart') audio.lastHeart();
+        else if (ev.kind === 'eliminated') audio.eliminated();
+      }
+      if (snap.phase === 'RUNNING') {
+        if (tvSprintMatchId !== snap.matchId && snap.phaseTimeLeft <= 30 && snap.phaseTimeLeft > 0) {
+          tvSprintMatchId = snap.matchId;
+          audio.finalSprint();
+        }
+        if (snap.phaseTimeLeft <= 5 && snap.phaseTimeLeft > 0) {
+          const secInt = Math.ceil(snap.phaseTimeLeft);
+          if (secInt >= 1 && secInt <= 5 && tvLastFinalBeepSec !== secInt) {
+            tvLastFinalBeepSec = secInt;
+            audio.countdownBeep(false);
+          }
+        }
+      } else {
+        tvLastFinalBeepSec = -1;
+        if (snap.phase === 'PODIUM' && prevPhase !== 'PODIUM') {
+          audio.stopMusic();
+          audio.finishFanfare();
+        }
+      }
+    }
 
     if (soloRun) return;
 
@@ -995,9 +1029,21 @@ async function main() {
     }
     const visibleGhosts =
       !soloRun && (isTvMode || latestRoom.phase === 'RUNNING') ? latestRoom.activeRunners : [];
-    world.sync(sim, viewDt, inMenu, visibleGhosts, savedProfile.id, isTvMode);
+    world.sync(
+      sim,
+      viewDt,
+      inMenu,
+      visibleGhosts,
+      savedProfile.id,
+      isTvMode,
+      latestRoom.phase === 'PODIUM',
+    );
 
-    audio.tempo = 112 + (sim.speed - SPEED.start) * 1.5;
+    const sprintTempoBoost =
+      isTvMode && latestRoom.phase === 'RUNNING' && latestRoom.phaseTimeLeft <= 30 && latestRoom.phaseTimeLeft > 0
+        ? 14
+        : 0;
+    audio.tempo = 112 + (sim.speed - SPEED.start) * 1.5 + sprintTempoBoost;
 
     let rumble = 0;
     if (state === 'play') {

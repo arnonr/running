@@ -235,4 +235,124 @@ describe('TV Mode 60 FPS Smooth Clock & Badge Cache', () => {
     const crown = createLeaderCrownMesh();
     expect(crown.children.length).toBeGreaterThanOrEqual(4);
   });
+
+  it('diffs RoomSnapshots in TvBroadcastTracker for lead changes, power-ups, last heart, and eliminations with cooldown guards', async () => {
+    const { TvBroadcastTracker } = await import('../src/ui');
+    const tracker = new TvBroadcastTracker();
+
+    const makeSnap = (
+      phaseTimeLeft: number,
+      runners: Array<Partial<any> & { id: string; name: string; rank: number }>,
+      maxLives = 3,
+      phase: 'LOBBY' | 'COUNTDOWN' | 'RUNNING' | 'PODIUM' = 'RUNNING',
+    ): any => ({
+      channel: '1',
+      matchId: 1,
+      phase,
+      phaseTimeLeft,
+      matchDuration: 180,
+      maxLives,
+      eliminatedIds: runners.filter((r) => r.eliminated).map((r) => r.id),
+      lobbyHold: true,
+      matchSeed: 202610,
+      referenceDistance: 100,
+      currentFloor: 2,
+      activeRunners: runners.map((r) => ({
+        role: 'senior',
+        color: '#38bdf8',
+        avatar: 'non',
+        lane: 1,
+        x: 0,
+        y: 0,
+        d: 100,
+        score: 500,
+        coins: 10,
+        floor: 2,
+        activeCenter: null,
+        collectedCount: 0,
+        packOffsetZ: 0,
+        lives: maxLives,
+        maxLives,
+        eliminated: false,
+        survivedSec: 10,
+        ...r,
+      })),
+      top10: [],
+      waitingQueue: [],
+      allDayBest: [],
+    });
+
+    // 1. Baseline snapshot at elapsed = 1.0s (phaseTimeLeft = 179s): no false lead alert
+    expect(
+      tracker.update(
+        makeSnap(179, [
+          { id: 'p1', name: 'นนท์', rank: 1 },
+          { id: 'p2', name: 'เมย์', rank: 2 },
+        ]),
+        1.0,
+      ),
+    ).toEqual([]);
+
+    // 2. Overtake at elapsed = 2.0s (< 3.0s grace): still suppressed
+    expect(
+      tracker.update(
+        makeSnap(178, [
+          { id: 'p2', name: 'เมย์', rank: 1 },
+          { id: 'p1', name: 'นนท์', rank: 2 },
+        ]),
+        2.0,
+      ),
+    ).toEqual([]);
+
+    // 3. Overtake at elapsed = 5.0s (>= 3.0s): emits 'lead' for p1
+    const evLead = tracker.update(
+      makeSnap(175, [
+        { id: 'p1', name: 'นนท์', rank: 1 },
+        { id: 'p2', name: 'เมย์', rank: 2 },
+      ]),
+      5.0,
+    );
+    expect(evLead.map((e) => e.kind)).toEqual(['lead']);
+    expect(evLead[0].titleTh).toContain('นนท์');
+
+    // 4. Rapid swap back at 6.0s (within 2.5s cooldown): debounced
+    expect(
+      tracker.update(
+        makeSnap(174, [
+          { id: 'p2', name: 'เมย์', rank: 1 },
+          { id: 'p1', name: 'นนท์', rank: 2 },
+        ]),
+        6.0,
+      ),
+    ).toEqual([]);
+
+    // 5. Power-up + Last Heart at 9.0s
+    const evMix = tracker.update(
+      makeSnap(171, [
+        { id: 'p2', name: 'เมย์', rank: 1, activeCenter: 1 },
+        { id: 'p1', name: 'นนท์', rank: 2, lives: 1 },
+      ]),
+      9.0,
+    );
+    expect(evMix.map((e) => e.kind)).toEqual(['power', 'last_heart']);
+
+    // 6. Elimination at 12.0s (lives drops to 0 and eliminated = true -> only 'eliminated', not 'last_heart')
+    const evElim = tracker.update(
+      makeSnap(168, [
+        { id: 'p2', name: 'เมย์', rank: 1, activeCenter: 1 },
+        { id: 'p1', name: 'นนท์', rank: 2, lives: 0, eliminated: true },
+      ]),
+      12.0,
+    );
+    expect(evElim.map((e) => e.kind)).toEqual(['eliminated']);
+
+    // 7. Unlimited lives (maxLives = 0) never emits 'last_heart', and LOBBY transition resets tracker state
+    expect(
+      tracker.update(
+        makeSnap(160, [{ id: 'p2', name: 'เมย์', rank: 1, lives: 1 }], 0),
+        15.0,
+      ),
+    ).toEqual([]);
+    expect(tracker.update(makeSnap(45, [], 3, 'LOBBY'), 20.0)).toEqual([]);
+  });
 });

@@ -16,6 +16,129 @@ import { buildJoinQrSvg, resolveMobileJoinUrl } from './qr';
 
 export type Screen = 'start' | 'countdown' | 'play' | 'pause' | 'over';
 
+export type TvBroadcastEventKind = 'lead' | 'power' | 'last_heart' | 'eliminated';
+
+export interface TvBroadcastEvent {
+  id: string;
+  kind: TvBroadcastEventKind;
+  icon: string;
+  titleTh: string;
+  accentHex: string;
+  centerId?: CenterId;
+}
+
+export class TvBroadcastTracker {
+  private matchId = -1;
+  private leaderId: string | null = null;
+  private hasBaselineLeader = false;
+  private lastLeadAlertAt = -999;
+  private lastBotPowerAt = -999;
+  private seq = 0;
+  private runners = new Map<
+    string,
+    { activeCenter: CenterId | null; lives: number; eliminated: boolean }
+  >();
+
+  reset() {
+    this.matchId = -1;
+    this.leaderId = null;
+    this.hasBaselineLeader = false;
+    this.lastLeadAlertAt = -999;
+    this.lastBotPowerAt = -999;
+    this.runners.clear();
+  }
+
+  update(snap: RoomSnapshot, nowSec = performance.now() / 1000): TvBroadcastEvent[] {
+    if (snap.phase !== 'RUNNING') {
+      this.reset();
+      return [];
+    }
+    if (snap.matchId !== this.matchId) {
+      this.reset();
+      this.matchId = snap.matchId;
+    }
+
+    const elapsed = Math.max(0, snap.matchDuration - snap.phaseTimeLeft);
+    const events: TvBroadcastEvent[] = [];
+
+    const leader =
+      snap.activeRunners
+        .filter((r) => !r.eliminated)
+        .sort((a, b) => a.rank - b.rank)[0] ?? null;
+
+    if (leader) {
+      if (!this.hasBaselineLeader) {
+        this.leaderId = leader.id;
+        this.hasBaselineLeader = true;
+      } else if (leader.id !== this.leaderId) {
+        this.leaderId = leader.id;
+        if (elapsed >= 3.0 && nowSec - this.lastLeadAlertAt >= 2.5) {
+          this.lastLeadAlertAt = nowSec;
+          events.push({
+            id: `ev-${++this.seq}`,
+            kind: 'lead',
+            icon: '👑',
+            titleTh: `${leader.name} แซงขึ้นนำเป็นอันดับ #1!`,
+            accentHex: '#facc15',
+          });
+        }
+      }
+    }
+
+    for (const r of snap.activeRunners) {
+      const prev = this.runners.get(r.id);
+      const curLives = r.lives ?? snap.maxLives;
+      const curElim = Boolean(r.eliminated);
+      if (prev) {
+        if (!curElim && r.activeCenter !== null && prev.activeCenter !== r.activeCenter) {
+          const meta = CENTERS[r.activeCenter];
+          if (!r.isBot || nowSec - this.lastBotPowerAt >= 6.0) {
+            if (r.isBot) this.lastBotPowerAt = nowSec;
+            events.push({
+              id: `ev-${++this.seq}`,
+              kind: 'power',
+              icon: meta.icon,
+              titleTh: `${r.name} เปิดพลัง #${r.activeCenter} ${meta.shortTh}!`,
+              accentHex: meta.color,
+              centerId: r.activeCenter,
+            });
+          }
+        }
+        if (!r.isBot && curElim && !prev.eliminated) {
+          events.push({
+            id: `ev-${++this.seq}`,
+            kind: 'eliminated',
+            icon: '💥',
+            titleTh: `${r.name} ชนครบกำหนด ตกรอบแล้ว!`,
+            accentHex: '#f43f5e',
+          });
+        } else if (
+          !r.isBot &&
+          !curElim &&
+          snap.maxLives > 1 &&
+          prev.lives > 1 &&
+          curLives === 1
+        ) {
+          events.push({
+            id: `ev-${++this.seq}`,
+            kind: 'last_heart',
+            icon: '💔',
+            titleTh: `ลุ้นระทึก! ${r.name} เหลือ ❤️ ดวงสุดท้าย!`,
+            accentHex: '#fb7185',
+          });
+        }
+      }
+      this.runners.set(r.id, {
+        activeCenter: r.activeCenter,
+        lives: curLives,
+        eliminated: curElim,
+      });
+    }
+
+    return events;
+  }
+}
+
 function formatSurvivedMMSS(sec: number): string {
   const safe = Number.isFinite(sec) ? sec : 0;
   const s = Math.max(0, Math.floor(safe));
@@ -539,6 +662,13 @@ export class UI {
           </div>
         </div>
 
+        <div class="tv-sprint-banner" id="tv-sprint-banner">🔥 โค้งสุดท้าย 30 วินาทีเดือด! · เร่งสปีดสู่ชั้น 10!</div>
+        <div class="tv-feed" id="tv-feed"></div>
+        <div class="tv-podium-card" id="tv-podium-card">
+          <div class="tv-podium-head">🏆 สรุปแชมป์พิชิตยอดตึกเทคโนพาร์ค (TOP 3 CHAMPIONS) 🏆</div>
+          <div class="tv-podium-grid" id="tv-podium-grid"></div>
+        </div>
+
         <div class="tv-main">
           <div class="tv-left-col">
             <div class="tv-qr-card">
@@ -971,6 +1101,53 @@ export class UI {
     if (this.el['tv-timer']) {
       this.el['tv-timer'].textContent = snap.phase === 'LOBBY' ? 'READY' : this.formatMMSS(snap.phaseTimeLeft);
     }
+
+    const isFinalSprint = snap.phase === 'RUNNING' && snap.phaseTimeLeft <= 30 && snap.phaseTimeLeft > 0;
+    this.el['tv-layer']?.classList.toggle('final-sprint', isFinalSprint);
+    this.el['tv-sprint-banner']?.classList.toggle('on', isFinalSprint);
+
+    const isPodium = snap.phase === 'PODIUM' && snap.top10.length > 0;
+    this.el['tv-podium-card']?.classList.toggle('on', isPodium);
+    if (this.el['tv-podium-grid']) {
+      const podiumGrid = this.el['tv-podium-grid'];
+      if (!isPodium) {
+        podiumGrid.replaceChildren();
+      } else {
+        const medals = ['🥇 แชมป์อันดับ #1', '🥈 รองชนะเลิศ #2', '🥉 อันดับ #3'];
+        const top3 = snap.top10.slice(0, 3);
+        podiumGrid.replaceChildren(
+          ...top3.map((r, idx) => {
+            const av = AVATARS[sanitizeAvatarId(r.avatar)];
+            const status = r.eliminated
+              ? `อยู่รอด ${formatSurvivedMMSS(r.survivedSec ?? 0)}`
+              : `ชั้น ${r.floor}/10 · 🪙 ${r.coins}`;
+            const slot = document.createElement('div');
+            slot.className = `tv-podium-slot rank-${idx + 1}`;
+            slot.style.setProperty('--p-col', r.color);
+
+            const medalEl = document.createElement('span');
+            medalEl.className = 'tv-podium-medal';
+            medalEl.textContent = medals[idx] || `#${idx + 1}`;
+
+            const nameEl = document.createElement('strong');
+            nameEl.className = 'tv-podium-name';
+            nameEl.textContent = `${av.icon} ${r.name}`;
+
+            const roleEl = document.createElement('span');
+            roleEl.className = 'tv-podium-role';
+            roleEl.textContent = `${ROLE_LABELS[r.role] ?? ROLE_LABELS.senior} · ${status}`;
+
+            const scoreEl = document.createElement('b');
+            scoreEl.className = 'tv-podium-score';
+            scoreEl.textContent = `${r.score.toLocaleString()} pts`;
+
+            slot.append(medalEl, nameEl, roleEl, scoreEl);
+            return slot;
+          }),
+        );
+      }
+    }
+
     if (this.el['tv-active-count']) {
       const botCount = snap.activeRunners.filter((r) => r.isBot).length;
       const humanRunners = snap.activeRunners.filter((r) => !r.isBot);
@@ -1040,6 +1217,30 @@ export class UI {
         snap.allDayBest.length > 0
           ? snap.allDayBest.slice(0, 3).map((b, idx) => `#${idx + 1} ${b.name}: ${b.score.toLocaleString()}`).join(' · ')
           : '-';
+    }
+  }
+
+  pushTvBroadcastEvents(events: TvBroadcastEvent[]) {
+    const feed = this.el['tv-feed'];
+    if (!feed || events.length === 0) return;
+    for (const ev of events) {
+      const item = document.createElement('div');
+      item.className = `tv-feed-item kind-${ev.kind}`;
+      item.style.setProperty('--feed-accent', ev.accentHex);
+      const iconSpan = document.createElement('span');
+      iconSpan.className = 'tv-feed-icon';
+      iconSpan.textContent = ev.icon;
+      const textStrong = document.createElement('strong');
+      textStrong.className = 'tv-feed-text';
+      textStrong.textContent = ev.titleTh;
+      item.append(iconSpan, textStrong);
+      feed.appendChild(item);
+      while (feed.children.length > 3) {
+        feed.firstElementChild?.remove();
+      }
+      window.setTimeout(() => {
+        item.remove();
+      }, 3400);
     }
   }
 

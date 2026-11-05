@@ -1393,7 +1393,15 @@ export class World {
     }
   }
 
-  sync(sim: Sim, dt: number, menu: boolean, ghosts: RunnerNetState[] = [], localPlayerId = '', tvMode = false) {
+  sync(
+    sim: Sim,
+    dt: number,
+    menu: boolean,
+    ghosts: RunnerNetState[] = [],
+    localPlayerId = '',
+    tvMode = false,
+    isPodium = false,
+  ) {
     this.time += dt;
     const pd = sim.d;
     const anchorZ = tvMode ? TV_ANCHOR_Z : 0;
@@ -1452,6 +1460,9 @@ export class World {
       }
     }
     for (const k in this.pools) this.pools[k].end();
+
+    // Update ghost pack before rendering coins & center capsules so TV coin/capsule pickups happen on the same frame
+    this.syncGhostPack(sim, dt, menu && !tvMode, ghosts, localPlayerId, tvMode, sim.speed > 0.1);
 
     // coins + glow
     this.coins.begin();
@@ -1514,7 +1525,19 @@ export class World {
 
     // 9-Center Open-Horizon Scenery: Portal Gates, Animated 3D Center Landmarks, Overhead Sky Elements & Billboards!
     this.syncNineCenterScenery(sim, pd, zOf);
-    this.syncGhostPack(sim, dt, menu && !tvMode, ghosts, localPlayerId, tvMode, sim.speed > 0.1);
+
+    if (tvMode && isPodium && Math.random() < dt * 2.6) {
+      const fwColors = [0xfacc15, 0x38bdf8, 0xf472b6, 0x4ade80, 0xc084fc];
+      const fwCol = fwColors[Math.floor(Math.random() * fwColors.length)];
+      this.fx.burst(
+        (Math.random() - 0.5) * 9,
+        4.2 + Math.random() * 2.8,
+        -6 - Math.random() * 8,
+        28,
+        fwCol,
+        { speed: 6.5, up: 3.6, size: 0.65, life: 0.85, grav: 2.2 },
+      );
+    }
 
     this.player.root.visible = !tvMode;
     if (menu && !tvMode) this.player.menu(dt);

@@ -121,6 +121,22 @@ export class Audio {
       this.tone(f, 0.28, 'triangle', 0.14, undefined, i * 0.1);
     });
   }
+  leadChange() {
+    [587.33, 739.99, 880].forEach((f, i) => {
+      this.tone(f, 0.14, 'triangle', 0.12, undefined, i * 0.075);
+    });
+  }
+  lastHeart() {
+    this.tone(320, 0.12, 'square', 0.14, 480, 0);
+    this.tone(240, 0.15, 'triangle', 0.16, 120, 0.12);
+    this.tone(320, 0.12, 'square', 0.14, 480, 0.26);
+  }
+  finalSprint() {
+    this.tone(440, 0.45, 'sawtooth', 0.14, 880, 0);
+    [659.25, 783.99, 1046.5].forEach((f, i) => {
+      this.tone(f, 0.14, 'square', 0.11, undefined, 0.18 + i * 0.07);
+    });
+  }
   click() { this.tone(660, 0.05, 'square', 0.06); }
   level() { [660, 880].forEach((f, i) => this.tone(f, 0.12, 'triangle', 0.1, undefined, i * 0.08)); }
 
