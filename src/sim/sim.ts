@@ -57,6 +57,12 @@ export interface SimSnapshot {
   pooled: { obs: number; coins: number; pickups: number };
 }
 
+const BOT_LANE_CANDIDATES: ReadonlyArray<ReadonlyArray<number>> = [
+  [0, 1, 2],
+  [1, 0, 2],
+  [2, 1, 0],
+];
+
 export class Sim {
   // runner
   lane = 1;
@@ -673,12 +679,17 @@ export class Sim {
       return { targetLane: lane, jump: false, slide: false };
     }
     const effectiveY = Math.max(y, supportY);
+    const obs = this.obs;
+    const n = obs.length;
     const hasBlockedTrain = (checkLane: number) => {
-      const hasLeadingRamp = this.obs.some(
-        (r) => r.kind === 'ramp' && r.lane === checkLane && r.d1 >= d - 2 && r.d0 <= d + 16,
-      );
-      if (hasLeadingRamp) return false;
-      for (const o of this.obs) {
+      for (let i = 0; i < n; i++) {
+        const r = obs[i];
+        if (r.kind === 'ramp' && r.lane === checkLane && r.d1 >= d - 2 && r.d0 <= d + 16) {
+          return false;
+        }
+      }
+      for (let i = 0; i < n; i++) {
+        const o = obs[i];
         if (o.lane !== checkLane) continue;
         if (o.kind !== 'train' && o.kind !== 'mtrain') continue;
         if (o.d1 <= d - 1 || o.d0 >= d + 18) continue;
@@ -688,10 +699,12 @@ export class Sim {
       return false;
     };
 
-    let targetLane = lane;
-    if (hasBlockedTrain(lane)) {
-      const candidates = [0, 1, 2].sort((a, b) => Math.abs(a - lane) - Math.abs(b - lane));
-      for (const c of candidates) {
+    const safeLane = Math.max(0, Math.min(2, lane));
+    let targetLane = safeLane;
+    if (hasBlockedTrain(safeLane)) {
+      const candidates = BOT_LANE_CANDIDATES[safeLane];
+      for (let i = 0; i < candidates.length; i++) {
+        const c = candidates[i];
         if (!hasBlockedTrain(c)) {
           targetLane = c;
           break;
@@ -701,7 +714,8 @@ export class Sim {
 
     let jump = false;
     let slide = false;
-    for (const o of this.obs) {
+    for (let i = 0; i < n; i++) {
+      const o = obs[i];
       if (o.lane !== targetLane) continue;
       if (o.d1 <= d - 0.5 || o.d0 >= d + 9.5) continue;
       if ((o.kind === 'low' || o.kind === 'hurdle') && effectiveY < o.yt) {

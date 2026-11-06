@@ -164,6 +164,23 @@ describe('TV Mode 60 FPS Smooth Clock & Badge Cache', () => {
     sim.addOb({ kind: 'overhead', lane: 2, d0: 170, d1: 170 + OB.overhead.depth });
     const evOver = sim.botEvadeActionAt(2, 164, 0, 0, null);
     expect(evOver.slide).toBe(true);
+
+    // Ramp leading into train in lane 1 at d = 200..207 + train 207..221 -> bot stays in lane 1 without calling Array.prototype.some or sort
+    sim.addOb({ kind: 'ramp', lane: 1, d0: 200, d1: 200 + OB.ramp.depth });
+    sim.addOb({ kind: 'train', lane: 1, d0: 200 + OB.ramp.depth, d1: 221, cars: 2 });
+    let someCalled = false;
+    const origSome = Array.prototype.some;
+    Array.prototype.some = function (...args: any[]) {
+      someCalled = true;
+      return origSome.apply(this, args as any);
+    };
+    try {
+      const evRampTrain = sim.botEvadeActionAt(1, 196, 0, 0, null);
+      expect(evRampTrain.targetLane).toBe(1);
+      expect(someCalled).toBe(false);
+    } finally {
+      Array.prototype.some = origSome;
+    }
   });
 
   it('shares procedural materials/textures across createCenterAttachments instances and caches animated nodes', () => {
