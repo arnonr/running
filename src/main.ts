@@ -18,7 +18,7 @@ import {
 import { load, save } from './storage';
 import {
   SPEED, DEFAULT_MATCH_DURATION, DEFAULT_MAX_LIVES, VIEW_AHEAD, CENTERS,
-  stepTvClock, laneX,
+  stepTvClock, computeRendererPixelRatio, shouldFlushTvSnapshotUi, computeTvSimStep, laneX,
 } from './config';
 import {
   NetClient, AVATAR_COLORS, sanitizeChannelId,
@@ -72,8 +72,7 @@ async function main() {
   renderer.toneMappingExposure = 1.05;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  const maxPR = Math.min(window.devicePixelRatio || 1, 2);
-  const pixelRatio = mobile ? Math.min(maxPR, 1.5) : maxPR;
+  const pixelRatio = computeRendererPixelRatio(window.devicePixelRatio || 1, mobile, isTvMode);
   renderer.setPixelRatio(pixelRatio);
 
   setLoaderProgress(0.25, 'กำลังโหลดโมเดล 3D...');
@@ -85,7 +84,7 @@ async function main() {
   await nextFrame();
 
   const avatarPreview = new AvatarPreviewStage(core);
-  const world = new World(core, { shadowSize: mobile ? 1024 : 2048 });
+  const world = new World(core, { shadowSize: mobile || isTvMode ? 1024 : 2048 });
   const sim = new Sim(202610);
   const audio = new Audio();
   audio.setMuted(load('muted', false));
@@ -122,6 +121,8 @@ async function main() {
   const tvTracker = new TvBroadcastTracker();
   let tvSprintMatchId = -1;
   let tvLastFinalBeepSec = -1;
+  let tvUiSnapshotDirty = false;
+  let tvUiSnapshotTimer = 0;
   const horned = new Set<number>();
 
   function clearDeathRevealTimer() {
@@ -396,10 +397,15 @@ async function main() {
           joinPendingMatchId = -1;
           net.leave(savedProfile.id);
         }
+        renderer.setPixelRatio(computeRendererPixelRatio(window.devicePixelRatio || 1, mobile, isTvMode));
+        resize();
         syncUrlQueryParams();
         net.setTvMode(isTvMode);
         ui.setTvMode(isTvMode);
         ui.setChannel(currentChannel);
+        ui.updateRoomSnapshot(latestRoom, savedProfile.id);
+        tvUiSnapshotDirty = false;
+        tvUiSnapshotTimer = 0;
         if (isTvMode && latestRoom.phase === 'RUNNING' && state !== 'play') {
           startMatchRun(latestRoom.matchSeed, latestRoom.matchDuration, 0, latestRoom.maxLives);
         }
@@ -481,7 +487,17 @@ async function main() {
   net.onSnapshot((snap) => {
     const prevPhase = latestRoom.phase;
     latestRoom = snap;
-    ui.updateRoomSnapshot(snap, savedProfile.id);
+    if (isTvMode) {
+      if (shouldFlushTvSnapshotUi(prevPhase, snap.phase, tvUiSnapshotTimer, 0.1)) {
+        ui.updateRoomSnapshot(snap, savedProfile.id);
+        tvUiSnapshotDirty = false;
+        tvUiSnapshotTimer = 0;
+      } else {
+        tvUiSnapshotDirty = true;
+      }
+    } else {
+      ui.updateRoomSnapshot(snap, savedProfile.id);
+    }
 
     if (isTvMode) {
       const tvEvents = tvTracker.update(snap, performance.now() / 1000);
@@ -948,6 +964,15 @@ async function main() {
 
   function tick(dt: number, draw = true) {
     if (isTvMode) {
+      tvUiSnapshotTimer += dt;
+      if (
+        tvUiSnapshotDirty &&
+        shouldFlushTvSnapshotUi('RUNNING', latestRoom.phase, tvUiSnapshotTimer, 0.1)
+      ) {
+        ui.updateRoomSnapshot(latestRoom, savedProfile.id);
+        tvUiSnapshotDirty = false;
+        tvUiSnapshotTimer = 0;
+      }
       // TV Live Arena: smoothly advance camera & track at 60 FPS with drift correction toward room snapshot
       sim.invincible = true;
       const tv = stepTvClock(
@@ -964,24 +989,9 @@ async function main() {
         sim.floor = tv.floor;
         sim.stageIndex = tv.stageIndex;
         sim.stageCenter = tv.stageCenter;
-        const leadHuman = latestRoom.activeRunners.find((r) => !r.isBot && !r.eliminated);
-        if (leadHuman && leadHuman.d > 0) {
-          let speedMul = 1;
-          if (leadHuman.stumbling) speedMul = 0.7;
-          else if (leadHuman.activeCenter === 1 || leadHuman.activeCenter === 9) speedMul = 1.35;
-          else if (leadHuman.activeCenter === 3) speedMul = 1.2;
-          sim.speed = tv.speed * speedMul;
-          const nextD = sim.d + sim.speed * dt;
-          const diffD = leadHuman.d - nextD;
-          if (Math.abs(diffD) > 25 || sim.d <= 0) {
-            sim.d = leadHuman.d;
-          } else {
-            sim.d = Math.max(sim.d, nextD + diffD * Math.min(1, dt * 10));
-          }
-        } else {
-          sim.d = tv.d;
-          sim.speed = tv.speed;
-        }
+        const tvStep = computeTvSimStep(tv);
+        sim.d = tvStep.d;
+        sim.speed = tvStep.speed;
         sim.updateMovers();
         sim.track.ensure(sim.d + VIEW_AHEAD);
         sim.recycle();

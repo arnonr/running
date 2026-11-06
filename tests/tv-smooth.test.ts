@@ -355,4 +355,36 @@ describe('TV Mode 60 FPS Smooth Clock & Badge Cache', () => {
     ).toEqual([]);
     expect(tracker.update(makeSnap(45, [], 3, 'LOBBY'), 20.0)).toEqual([]);
   });
+
+  it('caps TV mode pixelRatio at 1.25, throttles RUNNING TV DOM flushes to 10Hz, and keeps TV track distance monotonic when humans swap #1', async () => {
+    const {
+      computeRendererPixelRatio,
+      shouldFlushTvSnapshotUi,
+      computeTvSimStep,
+      stepTvClock,
+    } = await import('../src/config');
+
+    expect(computeRendererPixelRatio(2.5, false, true)).toBe(1.25);
+    expect(computeRendererPixelRatio(1.0, false, true)).toBe(1.0);
+    expect(computeRendererPixelRatio(3.0, true, false)).toBe(1.5);
+    expect(computeRendererPixelRatio(2.5, false, false)).toBe(2.0);
+
+    expect(shouldFlushTvSnapshotUi('COUNTDOWN', 'RUNNING', 0.01, 0.1)).toBe(true);
+    expect(shouldFlushTvSnapshotUi('RUNNING', 'PODIUM', 0.02, 0.1)).toBe(true);
+    expect(shouldFlushTvSnapshotUi('LOBBY', 'LOBBY', 0.01, 0.1)).toBe(true);
+    expect(shouldFlushTvSnapshotUi('RUNNING', 'RUNNING', 0.04, 0.1)).toBe(false);
+    expect(shouldFlushTvSnapshotUi('RUNNING', 'RUNNING', 0.1, 0.1)).toBe(true);
+
+    let elapsed = 25.0;
+    let prevD = stepTvClock(elapsed, 0, 'RUNNING', 155.0, 180).d;
+    // Simulate human rank overtake where new #1 has higher score but 18m lower distance d
+    for (let f = 0; f < 10; f++) {
+      const tv = stepTvClock(elapsed, 1 / 60, 'RUNNING', 155.0 - f * 0.016, 180);
+      elapsed = tv.elapsed;
+      const step = computeTvSimStep(tv);
+      expect(step.d).toBeGreaterThan(prevD);
+      expect(step.speed).toBeCloseTo(tv.speed, 5);
+      prevD = step.d;
+    }
+  });
 });

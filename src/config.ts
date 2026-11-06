@@ -345,3 +345,41 @@ export function stepTvClock(
     stageCenter: stageCenterAtProgress(progress01),
   };
 }
+
+/**
+ * Computes WebGLRenderer pixelRatio with a 1.25 cap in TV mode so notebooks connected
+ * to external 1080p/4K TVs maintain 60 FPS with 10 runners on screen.
+ */
+export function computeRendererPixelRatio(
+  devicePixelRatio: number,
+  mobile: boolean,
+  tvMode: boolean,
+): number {
+  const dpr = Math.max(1, devicePixelRatio || 1);
+  if (tvMode) return Math.min(dpr, 1.25);
+  if (mobile) return Math.min(dpr, 1.5);
+  return Math.min(dpr, 2.0);
+}
+
+/**
+ * Determines whether TV mode's DOM leaderboard/timer UI (`UI.updateRoomSnapshot`) should flush now.
+ * Phase transitions and non-RUNNING phases flush immediately; steady-state RUNNING flushes at 10 Hz (`0.10s`).
+ */
+export function shouldFlushTvSnapshotUi(
+  prevPhase: string,
+  nextPhase: string,
+  elapsedSinceLastFlushSec: number,
+  minIntervalSec = 0.1,
+): boolean {
+  if (prevPhase !== nextPhase || nextPhase !== 'RUNNING') return true;
+  return elapsedSinceLastFlushSec >= minIntervalSec;
+}
+
+/**
+ * Returns the monotonic 60 FPS track distance and speed for TV Live Arena from `stepTvClock`,
+ * decoupled from individual human runner distance fluctuations or rank swaps.
+ */
+export function computeTvSimStep(tv: TvClockState): { d: number; speed: number } {
+  return { d: tv.d, speed: tv.speed };
+}
+
