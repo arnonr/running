@@ -29,13 +29,13 @@ describe('TV Mode 60 FPS Smooth Clock & Badge Cache', () => {
     expect(lobby.speed).toBe(0);
   });
 
-  it('caches nameBadgeTexture instances and bounds the cache at NAME_BADGE_CACHE_LIMIT (64)', () => {
-    expect(NAME_BADGE_CACHE_LIMIT).toBe(64);
+  it('caches nameBadgeTexture instances and bounds the cache at NAME_BADGE_CACHE_LIMIT (256)', () => {
+    expect(NAME_BADGE_CACHE_LIMIT).toBe(256);
     const t1 = nameBadgeTexture('น้องเมย์', 1, '#f472b6');
     const t2 = nameBadgeTexture('น้องเมย์', 1, '#f472b6');
     expect(t1).toBe(t2);
 
-    // Fill beyond 64 unique keys and verify oldest is evicted
+    // Fill beyond 256 unique keys and verify oldest is evicted
     for (let i = 0; i < NAME_BADGE_CACHE_LIMIT + 2; i++) {
       nameBadgeTexture(`Runner-${i}`, (i % 10) + 1, '#38bdf8');
     }
@@ -386,5 +386,54 @@ describe('TV Mode 60 FPS Smooth Clock & Badge Cache', () => {
       expect(step.speed).toBeCloseTo(tv.speed, 5);
       prevD = step.d;
     }
+  });
+
+  it('retains all 100 badge textures for 10 runners across ranks 1..10 without eviction and computes smooth ghost pack targets', async () => {
+    const { computeGhostPackTargetTransform } = await import('../src/view/world');
+    expect(NAME_BADGE_CACHE_LIMIT).toBe(256);
+
+    const colors = [
+      '#38bdf8', '#f472b6', '#4ade80', '#facc15', '#fb923c',
+      '#a855f7', '#2dd4bf', '#f87171', '#60a5fa', '#e879f9',
+    ];
+    const firstPass: any[] = [];
+    for (let r = 0; r < 10; r++) {
+      for (let rank = 1; rank <= 10; rank++) {
+        firstPass.push(nameBadgeTexture(`Player-${r}`, rank, colors[r]));
+      }
+    }
+    let idx = 0;
+    for (let r = 0; r < 10; r++) {
+      for (let rank = 1; rank <= 10; rank++) {
+        expect(nameBadgeTexture(`Player-${r}`, rank, colors[r])).toBe(firstPass[idx++]);
+      }
+    }
+
+    const rank1 = computeGhostPackTargetTransform({
+      slotIndex: 0,
+      lane: 1,
+      runnerX: 0,
+      isBot: false,
+      rank: 1,
+      anchorRank: 5,
+      isAnchor: false,
+      packOffsetZ: 2.0,
+      sameLaneCount: 0,
+    });
+    const rank2 = computeGhostPackTargetTransform({
+      slotIndex: 1,
+      lane: 1,
+      runnerX: 0,
+      isBot: false,
+      rank: 2,
+      anchorRank: 5,
+      isAnchor: false,
+      packOffsetZ: 2.0,
+      sameLaneCount: 1,
+    });
+    // Adjacent rank step is 0.65m (instead of 1.45m) so rank swaps glide smoothly
+    expect(Math.abs(rank2.targetZ - rank1.targetZ)).toBeCloseTo(0.65, 2);
+    expect(rank1.targetX).toBeCloseTo(0, 3);
+    expect(rank2.targetX).toBeCloseTo(0, 3);
   });
 });

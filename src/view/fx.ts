@@ -13,6 +13,8 @@ const m4 = new THREE.Matrix4();
 const q = new THREE.Quaternion();
 const v = new THREE.Vector3();
 const s = new THREE.Vector3();
+const burstScratchColor = new THREE.Color();
+const updateScratchColor = new THREE.Color();
 
 export class Fx {
   mesh: THREE.InstancedMesh;
@@ -50,7 +52,7 @@ export class Fx {
   }
 
   burst(x: number, y: number, z: number, n: number, color: THREE.ColorRepresentation, o: { speed?: number; up?: number; size?: number; life?: number; grav?: number; world?: boolean } = {}) {
-    const c = new THREE.Color(color);
+    burstScratchColor.set(color);
     for (let i = 0; i < n; i++) {
       const p = this.free.pop();
       if (!p) return;
@@ -64,7 +66,7 @@ export class Fx {
       p.life = p.max = (o.life ?? 0.5) * (0.7 + Math.random() * 0.6);
       p.size = (o.size ?? 0.35) * (0.6 + Math.random() * 0.8);
       p.grav = o.grav ?? 6;
-      p.color.copy(c);
+      p.color.copy(burstScratchColor);
       p.world = o.world ?? true;
       this.ps.push(p);
     }
@@ -87,7 +89,7 @@ export class Fx {
       const sz = p.size * (0.4 + 0.6 * k);
       m4.compose(v.set(p.x, p.y, p.z), q, s.set(sz, sz, sz));
       this.mesh.setMatrixAt(n, m4);
-      this.mesh.setColorAt(n, p.color.clone().multiplyScalar(Math.min(1, k * 1.6)));
+      this.mesh.setColorAt(n, updateScratchColor.copy(p.color).multiplyScalar(Math.min(1, k * 1.6)));
       n++;
     }
     this.mesh.count = n;

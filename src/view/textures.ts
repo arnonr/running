@@ -605,10 +605,10 @@ export function centerCapsuleTexture(centerId: CenterId) {
   return tex(c, false);
 }
 
-export const NAME_BADGE_CACHE_LIMIT = 64;
+export const NAME_BADGE_CACHE_LIMIT = 256;
 const nameBadgeCache = new Map<string, THREE.CanvasTexture>();
 
-/** Floating 3D Nameplate for Ghost Runners on the shared track / TV Arena (cached with 64-entry LRU bound). */
+/** Floating 3D Nameplate for Ghost Runners on the shared track / TV Arena (cached with 256-entry LRU bound). */
 export function nameBadgeTexture(name: string, rank: number, color: string) {
   const shortName = Array.from((name || '').trim()).slice(0, 16).join('') || 'นักวิ่ง Techno';
   const key = `${rank}:${shortName}:${color}`;
@@ -651,8 +651,6 @@ export function nameBadgeTexture(name: string, rank: number, color: string) {
   if (nameBadgeCache.size >= NAME_BADGE_CACHE_LIMIT) {
     const oldestKey = nameBadgeCache.keys().next().value;
     if (oldestKey !== undefined) {
-      const oldTex = nameBadgeCache.get(oldestKey);
-      oldTex?.dispose();
       nameBadgeCache.delete(oldestKey);
     }
   }

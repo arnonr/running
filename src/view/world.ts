@@ -43,12 +43,47 @@ const CENTER_COLORS: Record<CenterId, THREE.Color> = {
 };
 const LIGHT = new THREE.Color(0.35, 0.85, 1.0);
 const LIGHT_RED = new THREE.Color(1.0, 0.25, 0.4);
+const WHITE_COLOR = new THREE.Color(0xffffff);
+const COIN_GOLD_HALO = new THREE.Color(1.0, 0.78, 0.25).multiplyScalar(0.6);
+const scratchHaloColor = new THREE.Color();
 const FLAT = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
 const GROUND_LEN = 300;
 const SIDEWALK_IN = 4.2;
 const SIDEWALK_OUT = 8.2;
 
 export const TV_ANCHOR_Z = -6.8;
+
+export interface GhostPackTargetInput {
+  slotIndex: number;
+  lane: number;
+  runnerX: number;
+  isBot?: boolean;
+  rank: number;
+  anchorRank: number;
+  isAnchor: boolean;
+  packOffsetZ: number;
+  sameLaneCount: number;
+}
+
+/**
+ * Computes smooth target X and Z coordinates for a ghost runner in the 10-runner pack.
+ * Uses a gentle 0.65m rank step blended with continuous packOffsetZ so rank overtakes glide without snapping.
+ */
+export function computeGhostPackTargetTransform(input: GhostPackTargetInput): {
+  targetX: number;
+  targetZ: number;
+} {
+  const spreadX = input.sameLaneCount === 0 ? 0 : ((input.slotIndex % 3) - 1) * 0.16;
+  const baseX =
+    !input.isBot && Math.abs((input.runnerX ?? laneX(input.lane)) - laneX(input.lane)) > 0.02
+      ? input.runnerX
+      : laneX(input.lane);
+  const targetX = baseX + spreadX;
+  const rankZ = TV_ANCHOR_Z + (input.rank - input.anchorRank) * 0.65;
+  const packShift = input.isAnchor ? 0 : input.packOffsetZ * 0.38;
+  const targetZ = Math.max(-11.0, Math.min(-1.2, rankZ - packShift));
+  return { targetX, targetZ };
+}
 
 export const SCENERY_POOL_LIMITS = {
   staticPerCenter: 42,
@@ -1209,6 +1244,12 @@ export class World {
       const charClone = cloneSkinned(this.player.model);
       charClone.rotation.set(0, Math.PI, 0);
       charClone.scale.set(0.92, 0.92, 0.92);
+      charClone.traverse((o) => {
+        if ((o as THREE.Mesh).isMesh) {
+          o.castShadow = false;
+          o.receiveShadow = false;
+        }
+      });
       const mixer = new THREE.AnimationMixer(charClone);
       const actions: Record<string, THREE.AnimationAction> = {};
       for (const clip of core.animations) {
@@ -1433,7 +1474,7 @@ export class World {
 
     // Ground, Sidewalk & Track Biome Tinting
     this.groundMat.color.set(biome.groundTintHex);
-    this.paveMat.color.set(biome.groundTintHex).lerp(new THREE.Color(0xffffff), 0.38);
+    this.paveMat.color.set(biome.groundTintHex).lerp(WHITE_COLOR, 0.38);
     this.trackMat.color.set(biome.trackTintHex);
     this.curbMat.color.set(activeAccentHex);
     this.curbMat.emissive.set(activeAccentHex).multiplyScalar(0.45);
@@ -1469,7 +1510,6 @@ export class World {
     this.halos.begin();
     q.setFromEuler(e.set(0, this.time * 3.2, 0));
     const camQ = this.camera.quaternion;
-    const gold = new THREE.Color(1.0, 0.78, 0.25).multiplyScalar(0.6);
     for (const c of sim.coinList) {
       if (c.d > pd + VIEW_AHEAD - 20) continue;
       let overlapsPickup = false;
@@ -1485,7 +1525,7 @@ export class World {
       m4.compose(v.set(c.x, c.y, z), q, one);
       this.coins.add(m4);
       m4.compose(v.set(c.x, c.y, z + 0.05), camQ, sc.set(1.5, 1.5, 1.5));
-      this.halos.add(m4, gold);
+      this.halos.add(m4, COIN_GOLD_HALO);
     }
 
     // 9 Center Pickup Capsules
@@ -1512,13 +1552,13 @@ export class World {
       for (const side of [-1, 1]) {
         const on = side < 0 ? blink : 1.75 - blink;
         m4.compose(v.set(x + side * 0.72, 0.95, z), camQ, sc.set(size, size, size));
-        this.halos.add(m4, LIGHT.clone().multiplyScalar(on));
+        this.halos.add(m4, scratchHaloColor.copy(LIGHT).multiplyScalar(on));
       }
       m4.compose(v.set(x, 2.9, z), camQ, sc.set(1.1, 1.1, 1.1));
-      this.halos.add(m4, LIGHT_RED.clone().multiplyScalar(blink));
+      this.halos.add(m4, scratchHaloColor.copy(LIGHT_RED).multiplyScalar(blink));
       const len = 18;
       m4.compose(v.set(x, 0.06, z + len / 2), FLAT, sc.set(2.2, len, 1));
-      this.halos.add(m4, LIGHT.clone().multiplyScalar(0.35 + 0.15 * blink));
+      this.halos.add(m4, scratchHaloColor.copy(LIGHT).multiplyScalar(0.35 + 0.15 * blink));
     }
     this.coins.end();
     this.halos.end();
@@ -1866,19 +1906,23 @@ export class World {
         const laneIdx = Math.max(0, Math.min(2, effectiveLane));
         const sameLaneCount = laneCounts[laneIdx];
         laneCounts[laneIdx]++;
-        const spreadX = sameLaneCount === 0 ? 0 : ((i % 3) - 1) * 0.2;
-        const baseX =
-          !g.isBot && Math.abs((g.x ?? laneX(effectiveLane)) - laneX(effectiveLane)) > 0.02
-            ? g.x
-            : laneX(effectiveLane);
-        targetX = baseX + spreadX;
-        const rankZ = TV_ANCHOR_Z + (g.rank - anchorRank) * 1.45;
-        const packShift = g.id === anchorRunner?.id ? 0 : g.packOffsetZ * 0.25;
-        targetZ = Math.max(-11.0, Math.min(-1.2, rankZ - packShift));
+        const target = computeGhostPackTargetTransform({
+          slotIndex: i,
+          lane: effectiveLane,
+          runnerX: g.x ?? laneX(effectiveLane),
+          isBot: g.isBot,
+          rank: g.rank,
+          anchorRank,
+          isAnchor: g.id === anchorRunner?.id,
+          packOffsetZ: g.packOffsetZ,
+          sameLaneCount,
+        });
+        targetX = target.targetX;
+        targetZ = target.targetZ;
       }
 
-      const kx = Math.min(1, dt * 14);
-      const kz = Math.min(1, dt * 5.5);
+      const kx = Math.min(1, dt * 10);
+      const kz = Math.min(1, dt * 4.2);
       slot.x += (targetX - slot.x) * kx;
       slot.z += (targetZ - slot.z) * kz;
 
@@ -2076,11 +2120,11 @@ export class World {
         (slot.ring.material as THREE.MeshBasicMaterial).color.set(col);
       }
 
-      const badgeKey = `${g.rank}:${g.name}:${col}`;
+      const badgeKey = `${g.rank}:${g.name}:${g.color}`;
       if (slot.badgeKey !== badgeKey) {
         slot.badgeKey = badgeKey;
         const sm = slot.badge.material as THREE.SpriteMaterial;
-        sm.map = nameBadgeTexture(g.name, g.rank, col);
+        sm.map = nameBadgeTexture(g.name, g.rank, g.color);
         sm.needsUpdate = true;
       }
     }

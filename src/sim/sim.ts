@@ -596,7 +596,10 @@ export class Sim {
    */
   ghostSupportAt(lane: number, x: number, d: number, prevSupportY: number, sameLane = true): number {
     let g = 0;
-    for (const o of this.obs) {
+    const obs = this.obs;
+    const n = obs.length;
+    for (let i = 0; i < n; i++) {
+      const o = obs[i];
       if (!o.walk) continue;
       if (o.lane !== lane && Math.abs(x - laneX(o.lane)) > o.halfW + PLAYER.halfW - 0.2) continue;
       if (o.kind === 'ramp') {
@@ -605,9 +608,16 @@ export class Sim {
           if (top > g) g = top;
         }
       } else if (d + PLAYER.halfD * 0.5 >= o.d0 && d - PLAYER.halfD * 0.5 <= o.d1) {
-        const hasLeadingRamp = this.obs.some(
-          (r) => r.kind === 'ramp' && r.lane === o.lane && Math.abs(r.d1 - o.d0) < 1.5,
-        );
+        let hasLeadingRamp = false;
+        if (prevSupportY < o.yt - 1.15) {
+          for (let j = 0; j < n; j++) {
+            const r = obs[j];
+            if (r.kind === 'ramp' && r.lane === o.lane && Math.abs(r.d1 - o.d0) < 1.5) {
+              hasLeadingRamp = true;
+              break;
+            }
+          }
+        }
         if (
           prevSupportY >= o.yt - 1.15 ||
           (hasLeadingRamp && (prevSupportY >= 0.2 || d <= o.d0 + 4.0 || sameLane))
@@ -978,7 +988,7 @@ export class Sim {
     for (let i = this.coinList.length - 1; i >= 0; i--) {
       const c = this.coinList[i];
       const ahead = c.d - d;
-      if (ahead > magnetRange + 2) continue;
+      if (ahead > magnetRange + 2 || (ahead < -2 && !c.pulled)) continue;
       if (magnet && ahead < magnetRange && ahead > -2) c.pulled = true;
       if (c.pulled) {
         const k = Math.min(1, dt * 15);
